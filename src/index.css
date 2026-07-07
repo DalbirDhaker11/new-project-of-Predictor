@@ -1,0 +1,282 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Nunito:wght@400;600;700;800&family=Fraunces:wght@400;500;600;700&family=Barlow+Condensed:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Fraunces", ui-serif, Georgia, serif;
+  --font-rounded: "Nunito", ui-rounded, system-ui, sans-serif;
+  --font-condensed: "Barlow Condensed", ui-sans-serif, system-ui, sans-serif;
+}
+
+/*
+ * App color theme system.
+ * The whole UI is built on an 18-stop palette (--c1 lightest to --c18 darkest)
+ * referenced throughout App.tsx as var(--c1) ... var(--c18). Swapping the
+ * [data-theme="..."] attribute on the root element re-colors the entire app
+ * chrome instantly. Semantic status colors (red/amber/green for risk levels)
+ * are intentionally NOT part of this system, since risk severity should read
+ * the same regardless of which color theme HR has chosen.
+ */
+:root,
+[data-theme="emerald"] {
+  /* Emerald / Sage (default) */
+  --c1: #fafaf6;
+  --c2: #edece4;
+  --c3: #dbe1cf;
+  --c4: #dbddd0;
+  --c5: #cdd0bd;
+  --c6: #cbd0be;
+  --c7: #c4c6b2;
+  --c8: #c1c3b1;
+  --c9: #a5a794;
+  --c10: #7d8673;
+  --c11: #6b7363;
+  --c12: #636b5a;
+  --c13: #5e6657;
+  --c14: #4f5647;
+  --c15: #4c5344;
+  --c16: #2b3327;
+  --c17: #1f261c;
+  --c18: #1c211a;
+}
+
+[data-theme="slate"] {
+  --c1: #f8fafc;
+  --c2: #eef2f6;
+  --c3: #e2e8f0;
+  --c4: #dde3ea;
+  --c5: #cbd5e1;
+  --c6: #c7d0dc;
+  --c7: #b9c3d0;
+  --c8: #aab6c4;
+  --c9: #94a3b8;
+  --c10: #7c8ba0;
+  --c11: #64748b;
+  --c12: #56657a;
+  --c13: #475569;
+  --c14: #3f4b5c;
+  --c15: #384454;
+  --c16: #334155;
+  --c17: #26313f;
+  --c18: #1e293b;
+}
+
+[data-theme="coral"] {
+  --c1: #fff8f6;
+  --c2: #fdece6;
+  --c3: #fbdccf;
+  --c4: #f8d3c4;
+  --c5: #f2c0ac;
+  --c6: #edb49d;
+  --c7: #e6a48b;
+  --c8: #de9479;
+  --c9: #d97757;
+  --c10: #c2654a;
+  --c11: #ac5640;
+  --c12: #954736;
+  --c13: #7e3c2f;
+  --c14: #6b3329;
+  --c15: #5c2c24;
+  --c16: #47231d;
+  --c17: #351a15;
+  --c18: #2a1512;
+}
+
+[data-theme="midnight"] {
+  --c1: #f5f6fb;
+  --c2: #e8eaf6;
+  --c3: #d7dcf0;
+  --c4: #cbd1ea;
+  --c5: #b3bce0;
+  --c6: #a3add8;
+  --c7: #8b96cc;
+  --c8: #7883c0;
+  --c9: #5f6bb0;
+  --c10: #4d5899;
+  --c11: #3f4a82;
+  --c12: #37406f;
+  --c13: #2f375f;
+  --c14: #292f52;
+  --c15: #232847;
+  --c16: #1c2038;
+  --c17: #14172a;
+  --c18: #0e1020;
+}
+
+[data-theme="trendex"] {
+  /* Trendex — light corporate blue, inspired by shared reference */
+  --c1: #f5f9ff;
+  --c2: #eaf2fe;
+  --c3: #dbe9fd;
+  --c4: #c7defc;
+  --c5: #a9cdfa;
+  --c6: #8dbdf7;
+  --c7: #6badf5;
+  --c8: #4a9cf2;
+  --c9: #2f80ed;
+  --c10: #2568c7;
+  --c11: #1f56a3;
+  --c12: #1a478a;
+  --c13: #163c74;
+  --c14: #123060;
+  --c15: #0f2750;
+  --c16: #0c1f40;
+  --c17: #091730;
+  --c18: #060f20;
+}
+
+[data-theme="sage-hr"] {
+  /* Sage HR — vivid green dashboard, inspired by shared reference */
+  --c1: #f3fbf6;
+  --c2: #e3f6ea;
+  --c3: #c9edd6;
+  --c4: #a3e0b8;
+  --c5: #7dd39c;
+  --c6: #55c67e;
+  --c7: #3ab866;
+  --c8: #22a854;
+  --c9: #12924a;
+  --c10: #0f7d3f;
+  --c11: #0c6935;
+  --c12: #0a562c;
+  --c13: #084524;
+  --c14: #06351c;
+  --c15: #052a16;
+  --c16: #042012;
+  --c17: #03170d;
+  --c18: #020f08;
+}
+
+/*
+ * Dark mode variants. Each theme's 18-stop scale is reversed (c1<->c18,
+ * c2<->c17, ...) so components that use low stops for surfaces/backgrounds
+ * and high stops for text automatically flip to dark-surface/light-text
+ * without any component code changes.
+ */
+[data-theme="emerald"][data-mode="dark"] {
+  --c1: #1c211a; --c2: #1f261c; --c3: #2b3327; --c4: #4c5344; --c5: #4f5647;
+  --c6: #5e6657; --c7: #636b5a; --c8: #6b7363; --c9: #7d8673; --c10: #a5a794;
+  --c11: #c1c3b1; --c12: #c4c6b2; --c13: #cbd0be; --c14: #cdd0bd; --c15: #dbddd0;
+  --c16: #dbe1cf; --c17: #edece4; --c18: #fafaf6;
+}
+
+[data-theme="slate"][data-mode="dark"] {
+  --c1: #1e293b; --c2: #26313f; --c3: #334155; --c4: #384454; --c5: #3f4b5c;
+  --c6: #475569; --c7: #56657a; --c8: #64748b; --c9: #7c8ba0; --c10: #94a3b8;
+  --c11: #aab6c4; --c12: #b9c3d0; --c13: #c7d0dc; --c14: #cbd5e1; --c15: #dde3ea;
+  --c16: #e2e8f0; --c17: #eef2f6; --c18: #f8fafc;
+}
+
+[data-theme="coral"][data-mode="dark"] {
+  --c1: #2a1512; --c2: #351a15; --c3: #47231d; --c4: #5c2c24; --c5: #6b3329;
+  --c6: #7e3c2f; --c7: #954736; --c8: #ac5640; --c9: #c2654a; --c10: #d97757;
+  --c11: #de9479; --c12: #e6a48b; --c13: #edb49d; --c14: #f2c0ac; --c15: #f8d3c4;
+  --c16: #fbdccf; --c17: #fdece6; --c18: #fff8f6;
+}
+
+[data-theme="midnight"][data-mode="dark"] {
+  --c1: #0e1020; --c2: #14172a; --c3: #1c2038; --c4: #232847; --c5: #292f52;
+  --c6: #2f375f; --c7: #37406f; --c8: #3f4a82; --c9: #4d5899; --c10: #5f6bb0;
+  --c11: #7883c0; --c12: #8b96cc; --c13: #a3add8; --c14: #b3bce0; --c15: #cbd1ea;
+  --c16: #d7dcf0; --c17: #e8eaf6; --c18: #f5f6fb;
+}
+
+[data-theme="trendex"][data-mode="dark"] {
+  --c1: #060f20; --c2: #091730; --c3: #0c1f40; --c4: #0f2750; --c5: #123060;
+  --c6: #163c74; --c7: #1a478a; --c8: #1f56a3; --c9: #2568c7; --c10: #2f80ed;
+  --c11: #4a9cf2; --c12: #6badf5; --c13: #8dbdf7; --c14: #a9cdfa; --c15: #c7defc;
+  --c16: #dbe9fd; --c17: #eaf2fe; --c18: #f5f9ff;
+}
+
+[data-theme="sage-hr"][data-mode="dark"] {
+  --c1: #020f08; --c2: #03170d; --c3: #042012; --c4: #052a16; --c5: #06351c;
+  --c6: #084524; --c7: #0a562c; --c8: #0c6935; --c9: #0f7d3f; --c10: #12924a;
+  --c11: #22a854; --c12: #3ab866; --c13: #55c67e; --c14: #7dd39c; --c15: #a3e0b8;
+  --c16: #c9edd6; --c17: #e3f6ea; --c18: #f3fbf6;
+}
+
+/*
+ * Optional background image (from Settings > Background). A translucent
+ * theme-tinted scrim sits between the photo and an app content so text
+ * stays readable regardless of which accent color/mode is active.
+ */
+.bg-image-skyline {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.95)),
+    url('/backgrounds/skyline.jpg');
+  background-size: cover;
+  background-position: right top;
+  background-attachment: fixed;
+}
+[data-mode="dark"].bg-image-skyline {
+  background-image:
+    linear-gradient(180deg, rgba(6, 8, 12, 0.82), rgba(6, 8, 12, 0.93)),
+    url('/backgrounds/skyline.jpg');
+}
+
+.bg-image-ai {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.95)),
+    url('/backgrounds/ai.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+[data-mode="dark"].bg-image-ai {
+  background-image:
+    linear-gradient(180deg, rgba(6, 8, 12, 0.82), rgba(6, 8, 12, 0.93)),
+    url('/backgrounds/ai.jpg');
+}
+
+.bg-image-layoffs {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.95)),
+    url('/backgrounds/layoffs.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+[data-mode="dark"].bg-image-layoffs {
+  background-image:
+    linear-gradient(180deg, rgba(6, 8, 12, 0.82), rgba(6, 8, 12, 0.93)),
+    url('/backgrounds/layoffs.jpg');
+}
+
+.bg-image-responsible {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.95)),
+    url('/backgrounds/responsible.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+[data-mode="dark"].bg-image-responsible {
+  background-image:
+    linear-gradient(180deg, rgba(6, 8, 12, 0.82), rgba(6, 8, 12, 0.93)),
+    url('/backgrounds/responsible.jpg');
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #0a0a0a;
+  color: #e0e0e0;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}

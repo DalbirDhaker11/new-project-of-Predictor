@@ -1,0 +1,6 @@
+{
+  "name": "Employee Resignation Risk Predictor",
+  "description": "Scores employees' resignation risk from HR data, explains contributing factors, and auto-drafts personalized retention plans.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
