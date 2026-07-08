@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 # --------------------------------------------------------------------------
-# Gemini client
+# AI Clients (Gemini & Groq)
 # --------------------------------------------------------------------------
 
 _GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -56,6 +56,9 @@ if _GEMINI_API_KEY and _GEMINI_API_KEY != "MY_GEMINI_API_KEY":
 def _generate_content(prompt: str, system_instruction: str, temperature: float = 0.5,
                        json_mode: bool = False, contents: Any = None):
     """Thin wrapper around the Gemini API call, mirroring the TS server's usage."""
+    if _genai_client is None:
+        raise Exception("Gemini API key is missing or invalid.")
+
     from google.genai import types
 
     config = types.GenerateContentConfig(
@@ -63,16 +66,60 @@ def _generate_content(prompt: str, system_instruction: str, temperature: float =
         temperature=temperature,
         response_mime_type="application/json" if json_mode else None,
     )
+    return _genai_client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=contents if contents is not None else prompt,
+        config=config,
+    )
+
+
+_GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+_groq_client = None
+if _GROQ_API_KEY and _GROQ_API_KEY != "YOUR_GROQ_API_KEY_HERE":
     try:
-        return _genai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents if contents is not None else prompt,
-            config=config,
-        )
+        from groq import Groq
+        _groq_client = Groq(api_key=_GROQ_API_KEY)
+    except Exception as err:  # noqa: BLE001
+        print(f"[groq] Failed to initialize client: {err}")
+        _groq_client = None
+
+
+class GroqResponse:
+    def __init__(self, text: str):
+        self.text = text
+
+
+def _generate_content_groq(prompt: str, system_instruction: str, temperature: float = 0.5,
+                           json_mode: bool = False, contents: Any = None):
+    """Thin wrapper around the Groq API call."""
+    if _groq_client is None:
+        raise Exception("Groq API key is missing or invalid.")
+        
+    messages = [{"role": "system", "content": system_instruction}]
+    
+    if contents is not None:
+        if isinstance(contents, list):
+            messages.extend(contents)
+        else:
+            messages.append({"role": "user", "content": str(contents)})
+    else:
+        messages.append({"role": "user", "content": prompt})
+
+    try:
+        kwargs = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+            
+        chat_completion = _groq_client.chat.completions.create(**kwargs)
+        return GroqResponse(text=chat_completion.choices[0].message.content)
     except Exception as e:
         err_msg = str(e)
-        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower():
-            raise Exception("Gemini API quota or rate limit exceeded. Please wait a bit before trying again, or check your API key usage limits in Google AI Studio.") from e
+        if "429" in err_msg or "rate limit" in err_msg.lower():
+            raise Exception("Groq API quota or rate limit exceeded. Please wait a bit before trying again.") from e
         raise e
 
 
@@ -621,9 +668,9 @@ Return ONLY the JSON object. Do not include any markdown formatting around the J
 @app.post("/api/chat")
 async def chat(request: Request):
     try:
-        if _genai_client is None:
+        if _groq_client is None:
             return JSONResponse(status_code=500, content={
-                "error": "Gemini API key is missing. Configure GEMINI_API_KEY to enable the chat assistant."
+                "error": "Groq API key is missing. Configure GROQ_API_KEY to enable the chat assistant."
             })
 
         body = await request.json()
@@ -727,16 +774,16 @@ CURRENT DATASET SUMMARY:
 {dataset_summary}"""
 
         if isinstance(history, list):
-            contents = [
-                {"role": h["role"], "parts": [{"text": h["text"]}]}
-                for h in history
-                if isinstance(h, dict) and isinstance(h.get("text"), str) and h.get("role") in ("user", "model")
-            ]
-            contents.append({"role": "user", "parts": [{"text": message}]})
+            contents = []
+            for h in history:
+                if isinstance(h, dict) and isinstance(h.get("text"), str) and h.get("role") in ("user", "model"):
+                    role = "assistant" if h["role"] == "model" else "user"
+                    contents.append({"role": role, "content": h["text"]})
+            contents.append({"role": "user", "content": message})
         else:
             contents = message
 
-        response = _generate_content("", system_instruction, temperature=0.5, contents=contents)
+        response = _generate_content_groq("", system_instruction, temperature=0.5, contents=contents)
         return {"reply": response.text}
     except Exception as err:  # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(err)})
