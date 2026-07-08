@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from model import Employee, DecisionTreeClassifier, generate_synthetic_hr_data
 import db as dbmod
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 app = FastAPI(title="Employee Resignation Risk Predictor API")
 
@@ -834,6 +834,6 @@ async def seed_sample():
 # Static file serving (production build of the React frontend)
 # --------------------------------------------------------------------------
 
-_DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dist")
+_DIST_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
 if os.path.isdir(_DIST_DIR):
     app.mount("/", StaticFiles(directory=_DIST_DIR, html=True), name="static")

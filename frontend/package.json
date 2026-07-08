@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "backend": "cd backend && python -m uvicorn main:app --reload --port 8000",
+    "backend": "cd ../backend && python -m uvicorn main:app --reload --port 8000",
     "build": "vite build",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
