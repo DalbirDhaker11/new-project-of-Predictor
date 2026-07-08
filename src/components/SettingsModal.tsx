@@ -29,7 +29,6 @@ const BACKGROUND_OPTIONS: { value: string; label: string }[] = [
   { value: "skyline", label: "City Skyline" },
   { value: "ai", label: "AI Tech" },
   { value: "layoffs", label: "HR Layoffs" },
-  { value: "responsible", label: "Responsible AI" },
 ];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings, setSettings }) => {
