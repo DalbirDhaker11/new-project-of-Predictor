@@ -13,17 +13,32 @@ export interface Employee {
   years_at_company: number;
   years_since_last_promotion: number;
   distance_from_home_km: number;
-  overtime: string; // "Yes" | "No"
-  job_satisfaction: number; // 1 to 4
-  work_life_balance: number; // 1 to 4
-  environment_satisfaction: number; // 1 to 4
+  overtime: number; // hours per week
+  job_satisfaction: number; // 1 to 5
+  work_life_balance: number; // 1 to 5
+  environment_satisfaction: number; // 1 to 5
   num_companies_worked: number;
   training_hours_last_year: number;
+  email: string;
+  gender: string;
+  marital_status: string;
+  job_level: number;
+  years_in_role: number;
+  years_with_curr_manager: number;
+  incentives_bonus: number;
+  market_benchmark: number;
+  benefits_satisfaction: number;
+  weekly_hours: number;
+  weekend_work: string;
+  travel_frequency: string;
+  manager_relation: number;
+  recognition_frequency: number;
   attrition?: string; // "Yes" | "No"
   
   // Scored outputs (from backend)
   riskScore?: number; // 0 to 100
   riskLevel?: "Low" | "Medium" | "High";
+  confidenceScore?: number;
   topRiskFactors?: {
     factor: string;
     label: string;

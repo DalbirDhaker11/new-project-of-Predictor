@@ -40,7 +40,10 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Heart,
-  ChevronDown
+  ChevronDown,
+  X,
+  Send,
+  MessageSquare
 } from "lucide-react";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 import { jsPDF } from "jspdf";
@@ -417,6 +420,49 @@ export default function App() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
+  // Chatbot State
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "model"; text: string }[]>([
+    { role: "model", text: "Hello! I am your AI HR Assistant. You can ask me anything about employee resignation risks, retention strategies, or insights from the loaded employee directory. How can I help you today?" }
+  ]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const sendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const messageText = chatInput.trim();
+    if (!messageText) return;
+
+    const updatedMessages = [...chatMessages, { role: "user" as const, text: messageText }];
+    setChatMessages(updatedMessages);
+    setChatInput("");
+    setIsChatLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: messageText,
+          history: chatMessages.slice(1)
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Failed to get response");
+      }
+
+      const data = await response.json();
+      setChatMessages([...updatedMessages, { role: "model" as const, text: data.reply }]);
+    } catch (err: any) {
+      console.error(err);
+      setChatMessages([...updatedMessages, { role: "model" as const, text: `Sorry, I encountered an error: ${err.message}` }]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const text = LOCALES[settings.language] || LOCALES.en;
 
@@ -664,8 +710,8 @@ export default function App() {
   const getSubscore = (field: "job_satisfaction" | "work_life_balance" | "environment_satisfaction") => {
     if (employees.length === 0) return "10.0";
     const avg = employees.reduce((acc, e) => acc + e[field], 0) / employees.length;
-    // Scale 1 to 4 to 1 to 10
-    return ((avg / 4) * 10).toFixed(1);
+    // Scale 1 to 5 to 1 to 10
+    return ((avg / 5) * 10).toFixed(1);
   };
 
   const satisfactionScore = getSubscore("job_satisfaction");
@@ -695,7 +741,7 @@ export default function App() {
   // Overtime pacing score (higher is better meaning fewer employees work overtime)
   const getOvertimeScore = () => {
     if (employees.length === 0) return "10.0";
-    const withOvertime = employees.filter(e => e.overtime === "Yes").length;
+    const withOvertime = employees.filter(e => e.overtime > 5).length;
     const ratio = withOvertime / employees.length;
     return ((1 - ratio) * 10).toFixed(1);
   };
@@ -738,7 +784,7 @@ export default function App() {
         if (topFactor === "num_companies_worked") return "Career development";
         if (topFactor === "years_at_company") return "Other";
       }
-      if (emp.overtime === "Yes") return "Better work/life balance";
+      if (emp.overtime > 5) return "Better work/life balance";
       if (emp.distance_from_home_km > 25) return "Change of location";
       if (emp.monthly_income < 40000) return "Better pay and benefits";
       if (emp.years_since_last_promotion >= 3) return "Career development";
@@ -1194,7 +1240,7 @@ export default function App() {
 
                                 <div className="flex justify-between items-center">
                                   <span className="text-[11px] font-bold text-[var(--c13)]">Job Satisfaction</span>
-                                  <span className="text-[11px] font-black text-[var(--c18)]">{emp.job_satisfaction}/4</span>
+                                  <span className="text-[11px] font-black text-[var(--c18)]">{emp.job_satisfaction}/5</span>
                                 </div>
 
                                 <div className="flex justify-between items-center">
@@ -2213,6 +2259,9 @@ export default function App() {
                               <p className="text-[10px] text-[var(--c13)] font-bold">
                                 {selectedEmp.role} • {selectedEmp.department}
                               </p>
+                              <p className="text-[9px] text-[var(--c10)] mt-1 font-semibold">
+                                ID: {selectedEmp.id} • {selectedEmp.email} • {selectedEmp.gender}, {selectedEmp.age} yrs • {selectedEmp.marital_status}
+                              </p>
                             </div>
                             <button
                               onClick={() => setSelectedEmp(null)}
@@ -2256,8 +2305,11 @@ export default function App() {
                               </span>
                             </div>
                             <div>
-                              <h4 className="text-xs font-black text-[var(--c18)]">
+                              <h4 className="text-xs font-black text-[var(--c18)] flex items-center gap-2">
                                 Turnover Risk: {(selectedEmp.riskScore ?? 0) >= 60 ? text.riskHigh : (selectedEmp.riskScore ?? 0) >= 30 ? text.riskMed : text.riskLow}
+                                <span className="text-[9px] bg-[var(--c2)] px-1.5 py-0.5 rounded text-[var(--c13)] font-mono">
+                                  Confidence: {selectedEmp.confidenceScore ?? 85}%
+                                </span>
                               </h4>
                               <p className="text-[10px] text-[var(--c13)] font-semibold leading-normal mt-0.5">
                                 Machine learning forecast based on compensation, overtime fatigue, and workspace ratings.
@@ -2265,68 +2317,125 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Quick metrics grid block */}
-                          <div className="grid grid-cols-2 gap-2 text-xs font-semibold">
-                            <div className="border border-[var(--c2)] p-2.5 rounded-xl bg-[var(--c1)] flex flex-col justify-between">
-                              <div className="flex items-center gap-1 text-[var(--c13)] mb-1">
-                                <IndianRupee className="h-3.5 w-3.5" />
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider">{text.salary}</span>
+                          {/* Rich metric columns */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                            {/* Column 1: Employment & Tenure */}
+                            <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
+                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                                <Briefcase className="h-3 w-3 text-[var(--c16)]" /> Employment & Tenure
+                              </h5>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Job Level</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">Level {selectedEmp.job_level ?? 2} / 5</span>
                               </div>
-                              <span className="font-extrabold text-[var(--c18)]">
-                                ₹{selectedEmp.monthly_income.toLocaleString("en-IN")}/mo
-                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Years Active</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.years_at_company} yrs</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Years in Role</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.years_in_role ?? 2} yrs</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Last Promotion</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.years_since_last_promotion} yrs ago</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">With Manager</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.years_with_curr_manager ?? 2} yrs</span>
+                              </div>
                             </div>
-                            <div className="border border-[var(--c2)] p-2.5 rounded-xl bg-[var(--c1)] flex flex-col justify-between">
-                              <div className="flex items-center gap-1 text-[var(--c13)] mb-1">
-                                <MapPin className="h-3.5 w-3.5" />
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider">{text.commute}</span>
+
+                            {/* Column 2: Compensation Metrics */}
+                            <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
+                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                                <IndianRupee className="h-3 w-3 text-[var(--c16)]" /> Compensation Metrics
+                              </h5>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Annual Salary</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">₹{(selectedEmp.monthly_income * 12).toLocaleString("en-IN")}</span>
                               </div>
-                              <span className="font-extrabold text-[var(--c18)]">
-                                {selectedEmp.distance_from_home_km} km
-                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Incentives & Bonus</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">₹{(selectedEmp.incentives_bonus ?? 0).toLocaleString("en-IN")}</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Market Benchmark</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">₹{(selectedEmp.market_benchmark ?? 0).toLocaleString("en-IN")}</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Comp. Deficit</span>
+                                <span className={`text-[11px] font-black mt-0.5 ${selectedEmp.market_benchmark > (selectedEmp.monthly_income * 12) ? "text-red-700 font-mono" : "text-[var(--c18)]"}`}>
+                                  {selectedEmp.market_benchmark > (selectedEmp.monthly_income * 12) 
+                                    ? `₹${(selectedEmp.market_benchmark - (selectedEmp.monthly_income * 12)).toLocaleString("en-IN")}`
+                                    : "-"
+                                  }
+                                </span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Benefits Sat.</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.benefits_satisfaction ?? 3} / 5</span>
+                              </div>
                             </div>
-                            <div className="border border-[var(--c2)] p-2.5 rounded-xl bg-[var(--c1)] flex flex-col justify-between">
-                              <div className="flex items-center gap-1 text-[var(--c13)] mb-1">
-                                <Clock className="h-3.5 w-3.5" />
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider">{text.overtime}</span>
+
+                            {/* Column 3: Workload & Stress */}
+                            <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
+                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-[var(--c16)]" /> Workload & Stress
+                              </h5>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Weekly Hours</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.weekly_hours ?? 40} hrs</span>
                               </div>
-                              <span className="font-extrabold text-[var(--c18)]">
-                                {selectedEmp.overtime === "Yes" ? "Frequent" : "No Overtime"}
-                              </span>
-                            </div>
-                            <div className="border border-[var(--c2)] p-2.5 rounded-xl bg-[var(--c1)] flex flex-col justify-between">
-                              <div className="flex items-center gap-1 text-[var(--c13)] mb-1">
-                                <Award className="h-3.5 w-3.5" />
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider">Tenure</span>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Overtime Hours</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.overtime} hrs / wk</span>
                               </div>
-                              <span className="font-extrabold text-[var(--c18)]">
-                                {selectedEmp.years_at_company} {selectedEmp.years_at_company === 1 ? "year" : "years"}
-                              </span>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Weekend Work</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">
+                                  {selectedEmp.weekend_work === "Required" || selectedEmp.weekend_work === "Yes" || selectedEmp.weekend_work === "true" || selectedEmp.weekend_work === true ? "Required" : "Not Required"}
+                                </span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Travel Frequency</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.travel_frequency ?? "Rarely"}</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] uppercase tracking-wider text-[var(--c13)] font-extrabold">Commute Radius</span>
+                                <span className="text-[11px] font-black text-[var(--c18)] mt-0.5">{selectedEmp.distance_from_home_km} km</span>
+                              </div>
                             </div>
                           </div>
 
                           {/* Satisfaction Sliders Ratings */}
-                          <div className="space-y-2 border-t border-[var(--c2)] pt-3">
-                            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--c12)]">
-                              Engagement & Survey Ratings
+                          <div className="space-y-2.5 border-t border-[var(--c2)] pt-3.5">
+                            <h4 className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--c12)] flex items-center gap-1">
+                              <TrendingUp className="h-3 w-3 text-[var(--c16)]" /> Workplace Experience Sentiment Indexes
                             </h4>
-                            <div className="grid grid-cols-3 gap-2 font-bold text-center">
-                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)]">
+                            <div className="grid grid-cols-4 gap-2 font-bold text-center">
+                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)] shadow-sm">
                                 <span className="text-[9px] text-[var(--c13)] block mb-0.5">Job Sat</span>
                                 <span className={`text-xs ${selectedEmp.job_satisfaction <= 2 ? "text-red-700" : "text-emerald-700"}`}>
-                                  {selectedEmp.job_satisfaction}/4
+                                  {selectedEmp.job_satisfaction}/5
                                 </span>
                               </div>
-                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)]">
+                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)] shadow-sm">
                                 <span className="text-[9px] text-[var(--c13)] block mb-0.5">Work-Life</span>
                                 <span className={`text-xs ${selectedEmp.work_life_balance <= 2 ? "text-red-700" : "text-emerald-700"}`}>
-                                  {selectedEmp.work_life_balance}/4
+                                  {selectedEmp.work_life_balance}/5
                                 </span>
                               </div>
-                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)]">
-                                <span className="text-[9px] text-[var(--c13)] block mb-0.5">Env Sat</span>
-                                <span className={`text-xs ${selectedEmp.environment_satisfaction <= 2 ? "text-red-700" : "text-emerald-700"}`}>
-                                  {selectedEmp.environment_satisfaction}/4
+                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)] shadow-sm">
+                                <span className="text-[9px] text-[var(--c13)] block mb-0.5">Mgr Relation</span>
+                                <span className={`text-xs ${selectedEmp.manager_relation <= 2 ? "text-red-700" : "text-emerald-700"}`}>
+                                  {selectedEmp.manager_relation ?? 4}/5
+                                </span>
+                              </div>
+                              <div className="p-2 border border-[var(--c2)] rounded-xl bg-[var(--c1)] shadow-sm">
+                                <span className="text-[9px] text-[var(--c13)] block mb-0.5">Recognition</span>
+                                <span className={`text-xs ${selectedEmp.recognition_frequency <= 2 ? "text-red-700" : "text-emerald-700"}`}>
+                                  {selectedEmp.recognition_frequency ?? 3}/5
                                 </span>
                               </div>
                             </div>
@@ -2924,6 +3033,126 @@ export default function App() {
             {text.disclaimer}
           </p>
         </footer>
+
+        {/* Floating AI Chatbot Assistant */}
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+          <AnimatePresence>
+            {isChatOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 50, scale: 0.95 }}
+                className="bg-[var(--c1)] border border-[var(--c5)] shadow-2xl rounded-3xl w-[380px] max-w-[calc(100vw-2rem)] h-[500px] mb-4 flex flex-col overflow-hidden"
+              >
+                {/* Header */}
+                <div className="bg-[var(--c16)] text-white px-5 py-4 flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <Sparkles className="h-5 w-5 text-[var(--c3)] animate-pulse" />
+                      <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-400 border border-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black tracking-wide">Gemini HR Advisor</h4>
+                      <p className="text-[8px] text-white/80 font-bold uppercase tracking-wider">AI Copilot • Online</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsChatOpen(false)}
+                    className="text-white/80 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Messages Body */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--c2)]/20">
+                  {chatMessages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-2xl p-3 text-xs font-medium leading-relaxed shadow-sm ${
+                          msg.role === "user"
+                            ? "bg-[var(--c16)] text-white rounded-br-none"
+                            : "bg-[var(--c1)] text-[var(--c18)] border border-[var(--c5)] rounded-bl-none"
+                        }`}
+                      >
+                        {msg.role === "model" ? (
+                          <MarkdownRenderer text={msg.text} />
+                        ) : (
+                          msg.text
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {isChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-[var(--c1)] text-[var(--c18)] border border-[var(--c5)] rounded-2xl rounded-bl-none p-3 max-w-[80%] text-xs font-medium shadow-sm flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 bg-[var(--c13)] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="h-1.5 w-1.5 bg-[var(--c13)] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="h-1.5 w-1.5 bg-[var(--c13)] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Suggestion Chips */}
+                {chatMessages.length === 1 && (
+                  <div className="px-4 py-2 border-t border-[var(--c5)] bg-[var(--c1)] flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setChatInput("Who has the highest resignation risk?"); }}
+                      className="text-[9px] font-extrabold text-[var(--c16)] hover:text-white bg-[var(--c2)] hover:bg-[var(--c16)] border border-[var(--c6)] px-2 py-1 rounded-lg transition-all cursor-pointer"
+                    >
+                      Highest Risk Employees?
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setChatInput("Can you suggest some retention strategies for software engineers?"); }}
+                      className="text-[9px] font-extrabold text-[var(--c16)] hover:text-white bg-[var(--c2)] hover:bg-[var(--c16)] border border-[var(--c6)] px-2 py-1 rounded-lg transition-all cursor-pointer"
+                    >
+                      Retention Strategies
+                    </button>
+                  </div>
+                )}
+
+                {/* Footer Form */}
+                <form
+                  onSubmit={sendChatMessage}
+                  className="p-3 border-t border-[var(--c5)] bg-[var(--c1)] flex gap-2"
+                >
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Ask anything..."
+                    className="flex-1 bg-[var(--c2)] text-[var(--c18)] border border-[var(--c5)] rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--c16)]"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-[var(--c16)] text-white hover:bg-[var(--c17)] p-2 rounded-xl transition-all cursor-pointer shadow-sm"
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                </form>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Floating Bubble Button */}
+          <button
+            type="button"
+            onClick={() => setIsChatOpen(!isChatOpen)}
+            className="bg-gradient-to-tr from-[var(--c16)] to-indigo-600 text-white p-4 rounded-full shadow-2xl hover:scale-105 active:scale-95 transition-all cursor-pointer z-50 flex items-center justify-center relative group"
+            title="Open AI Chat Assistant"
+          >
+            <MessageSquare className="h-6 w-6" />
+            <span className="absolute right-full mr-3 bg-[var(--c18)] text-white text-[9px] font-black uppercase tracking-wider py-1 px-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow-md">
+              AI HR Chat Advisor
+            </span>
+          </button>
+        </div>
       </div>
 
 

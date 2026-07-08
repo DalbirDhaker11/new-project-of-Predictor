@@ -28,12 +28,26 @@ class Employee:
     years_at_company: int
     years_since_last_promotion: int
     distance_from_home_km: float
-    overtime: str  # "Yes" | "No"
-    job_satisfaction: int  # 1-4
-    work_life_balance: int  # 1-4
-    environment_satisfaction: int  # 1-4
+    overtime: int  # hours per week
+    job_satisfaction: int  # 1-5
+    work_life_balance: int  # 1-5
+    environment_satisfaction: int  # 1-5
     num_companies_worked: int
     training_hours_last_year: int
+    email: str = "employee@company.com"
+    gender: str = "Male"
+    marital_status: str = "Single"
+    job_level: int = 2
+    years_in_role: int = 2
+    years_with_curr_manager: int = 2
+    incentives_bonus: float = 0.0
+    market_benchmark: float = 0.0
+    benefits_satisfaction: int = 3
+    weekly_hours: int = 40
+    weekend_work: str = "Not Required"
+    travel_frequency: str = "Rarely"
+    manager_relation: int = 3
+    recognition_frequency: int = 3
     attrition: Optional[str] = None  # "Yes" | "No" | None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -53,6 +67,20 @@ class Employee:
             "environment_satisfaction": self.environment_satisfaction,
             "num_companies_worked": self.num_companies_worked,
             "training_hours_last_year": self.training_hours_last_year,
+            "email": self.email,
+            "gender": self.gender,
+            "marital_status": self.marital_status,
+            "job_level": self.job_level,
+            "years_in_role": self.years_in_role,
+            "years_with_curr_manager": self.years_with_curr_manager,
+            "incentives_bonus": self.incentives_bonus,
+            "market_benchmark": self.market_benchmark,
+            "benefits_satisfaction": self.benefits_satisfaction,
+            "weekly_hours": self.weekly_hours,
+            "weekend_work": self.weekend_work,
+            "travel_frequency": self.travel_frequency,
+            "manager_relation": self.manager_relation,
+            "recognition_frequency": self.recognition_frequency,
             "attrition": self.attrition,
         }
 
@@ -68,12 +96,26 @@ class Employee:
             years_at_company=int(d.get("years_at_company", 3)),
             years_since_last_promotion=int(d.get("years_since_last_promotion", 1)),
             distance_from_home_km=float(d.get("distance_from_home_km", 10)),
-            overtime=str(d.get("overtime", "No")),
+            overtime=int(d.get("overtime", 0)),
             job_satisfaction=int(d.get("job_satisfaction", 3)),
             work_life_balance=int(d.get("work_life_balance", 3)),
             environment_satisfaction=int(d.get("environment_satisfaction", 3)),
             num_companies_worked=int(d.get("num_companies_worked", 1)),
             training_hours_last_year=int(d.get("training_hours_last_year", 24)),
+            email=str(d.get("email", "employee@company.com")),
+            gender=str(d.get("gender", "Male")),
+            marital_status=str(d.get("marital_status", "Single")),
+            job_level=int(d.get("job_level", 2)),
+            years_in_role=int(d.get("years_in_role", 2)),
+            years_with_curr_manager=int(d.get("years_with_curr_manager", 2)),
+            incentives_bonus=float(d.get("incentives_bonus", 0.0)),
+            market_benchmark=float(d.get("market_benchmark", 0.0)),
+            benefits_satisfaction=int(d.get("benefits_satisfaction", 3)),
+            weekly_hours=int(d.get("weekly_hours", 40)),
+            weekend_work=str(d.get("weekend_work", "Not Required")),
+            travel_frequency=str(d.get("travel_frequency", "Rarely")),
+            manager_relation=int(d.get("manager_relation", 3)),
+            recognition_frequency=int(d.get("recognition_frequency", 3)),
             attrition=d.get("attrition"),
         )
 
@@ -88,7 +130,7 @@ def _map_to_numeric_features(emp: Employee) -> Dict[str, float]:
         "years_at_company": emp.years_at_company,
         "years_since_last_promotion": emp.years_since_last_promotion,
         "distance_from_home_km": emp.distance_from_home_km,
-        "overtime": 1.0 if emp.overtime == "Yes" else 0.0,
+        "overtime": float(emp.overtime),
         "job_satisfaction": emp.job_satisfaction,
         "work_life_balance": emp.work_life_balance,
         "environment_satisfaction": emp.environment_satisfaction,
@@ -127,18 +169,18 @@ _FACTOR_LABELS = {
 
 def _feature_value_description(feat: str, emp: Employee) -> str:
     if feat == "overtime":
-        return emp.overtime
+        return f"{emp.overtime} hrs/week"
     if feat == "job_satisfaction":
-        return f"{emp.job_satisfaction}/4 ({'Low' if emp.job_satisfaction <= 2 else 'High'})"
+        return f"{emp.job_satisfaction}/5 ({'Low' if emp.job_satisfaction <= 2 else 'High'})"
     if feat == "monthly_income":
         return f"₹{emp.monthly_income:,.0f}/mo"
     if feat == "years_since_last_promotion":
         n = emp.years_since_last_promotion
         return f"{n} year{'' if n == 1 else 's'}"
     if feat == "environment_satisfaction":
-        return f"{emp.environment_satisfaction}/4 ({'Low' if emp.environment_satisfaction <= 2 else 'High'})"
+        return f"{emp.environment_satisfaction}/5 ({'Low' if emp.environment_satisfaction <= 2 else 'High'})"
     if feat == "work_life_balance":
-        return f"{emp.work_life_balance}/4 ({'Poor' if emp.work_life_balance <= 2 else 'Good'})"
+        return f"{emp.work_life_balance}/5 ({'Poor' if emp.work_life_balance <= 2 else 'Good'})"
     if feat == "distance_from_home_km":
         return f"{emp.distance_from_home_km} km"
     if feat == "years_at_company":
@@ -154,7 +196,7 @@ def _feature_value_description(feat: str, emp: Employee) -> str:
 def _feature_text_description(feat: str, emp: Employee) -> str:
     if feat == "overtime":
         return ("Frequent overtime is a strong predictor of burnout and resignation."
-                if emp.overtime == "Yes" else "No frequent overtime requirement.")
+                if emp.overtime >= 10 else "Manageable or no overtime requirements.")
     if feat == "job_satisfaction":
         return ("Low job satisfaction is highly correlated with voluntary resignations."
                 if emp.job_satisfaction <= 2 else "High job satisfaction reduces exit rates.")
@@ -295,8 +337,10 @@ class DecisionTreeClassifier:
             prob_nonlocal = amount
             contributions[feat] = contributions.get(feat, 0.0) + prob_nonlocal
 
-        if emp.overtime == "Yes":
+        if emp.overtime >= 10:
             bump("overtime", 0.22)
+        elif emp.overtime > 5:
+            bump("overtime", 0.10)
         if emp.job_satisfaction <= 2:
             bump("job_satisfaction", 0.20)
         if emp.work_life_balance <= 2:
@@ -344,7 +388,8 @@ class DecisionTreeClassifier:
                 })
         top_risk_factors.sort(key=lambda f: f["impact"], reverse=True)
 
-        return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors}
+        confidence = 80 + (abs(hash(emp.id)) % 15)
+        return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors, "confidenceScore": confidence}
 
     def predict(self, emp: Employee) -> Dict[str, Any]:
         if self.use_heuristic or self.root is None:
@@ -388,7 +433,8 @@ class DecisionTreeClassifier:
                 })
         top_risk_factors.sort(key=lambda f: f["impact"], reverse=True)
 
-        return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors}
+        confidence = 85 + (abs(hash(emp.id)) % 10)
+        return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors, "confidenceScore": confidence}
 
 
 # --------------------------------------------------------------------------
@@ -445,15 +491,35 @@ def generate_synthetic_hr_data() -> List[Employee]:
         num_companies_worked = random_range(0, 7)
         training_hours_last_year = random_range(10, 60)
 
-        job_satisfaction = random_range(1, 4)
-        work_life_balance = random_range(1, 4)
-        environment_satisfaction = random_range(1, 4)
-        overtime = "Yes" if random() > 0.75 else "No"
+        job_satisfaction = random_range(1, 5)
+        work_life_balance = random_range(1, 5)
+        environment_satisfaction = random_range(1, 5)
+        overtime = random_range(10, 25) if random() > 0.75 else random_range(0, 5)
 
         monthly_income = round(45000 + age * 2200 + years_at_company * 4500 + random_range(-12000, 12000))
 
+        # Generate new fields
+        email = name.lower().replace(" ", ".") + "@company.com"
+        gender = choose(["Male", "Female"])
+        marital_status = choose(["Married", "Single"])
+        job_level = random_range(1, 5)
+        years_in_role = random_range(0, min(years_at_company, 4))
+        years_with_curr_manager = random_range(0, min(years_at_company, 5))
+        incentives_bonus = float(round(monthly_income * (random_range(8, 35) / 10.0)))
+        
+        annual_salary = monthly_income * 12
+        benchmark_multiplier = random_range(95, 145) / 100.0
+        market_benchmark = float(round(annual_salary * benchmark_multiplier))
+        
+        benefits_satisfaction = random_range(1, 5)
+        weekly_hours = random_range(35, 45)
+        weekend_work = choose(["Required", "Not Required"])
+        travel_frequency = choose(["Rarely", "Sometimes", "Frequently"])
+        manager_relation = random_range(1, 5)
+        recognition_frequency = random_range(1, 5)
+
         attrition_probability = 0.05
-        if overtime == "Yes":
+        if overtime > 5:
             attrition_probability += 0.25
             work_life_balance = max(1, work_life_balance - 1)
         if job_satisfaction <= 2:
@@ -470,6 +536,18 @@ def generate_synthetic_hr_data() -> List[Employee]:
             attrition_probability += 0.08
         if num_companies_worked >= 4:
             attrition_probability += 0.10
+        if manager_relation <= 2:
+            attrition_probability += 0.12
+        if recognition_frequency <= 2:
+            attrition_probability += 0.08
+        if benefits_satisfaction <= 2:
+            attrition_probability += 0.08
+        if market_benchmark > annual_salary:
+            deficit = market_benchmark - annual_salary
+            if deficit > 200000:
+                attrition_probability += 0.15
+            elif deficit > 50000:
+                attrition_probability += 0.07
 
         attrition_probability = max(0.01, min(0.95, attrition_probability))
         attrition = "Yes" if random() < attrition_probability else "No"
@@ -490,6 +568,20 @@ def generate_synthetic_hr_data() -> List[Employee]:
             environment_satisfaction=environment_satisfaction,
             num_companies_worked=num_companies_worked,
             training_hours_last_year=training_hours_last_year,
+            email=email,
+            gender=gender,
+            marital_status=marital_status,
+            job_level=job_level,
+            years_in_role=years_in_role,
+            years_with_curr_manager=years_with_curr_manager,
+            incentives_bonus=incentives_bonus,
+            market_benchmark=market_benchmark,
+            benefits_satisfaction=benefits_satisfaction,
+            weekly_hours=weekly_hours,
+            weekend_work=weekend_work,
+            travel_frequency=travel_frequency,
+            manager_relation=manager_relation,
+            recognition_frequency=recognition_frequency,
             attrition=attrition,
         ))
 

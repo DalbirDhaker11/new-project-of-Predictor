@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from model import Employee, DecisionTreeClassifier, generate_synthetic_hr_data
 import db as dbmod
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 app = FastAPI(title="Employee Resignation Risk Predictor API")
 
@@ -63,11 +63,17 @@ def _generate_content(prompt: str, system_instruction: str, temperature: float =
         temperature=temperature,
         response_mime_type="application/json" if json_mode else None,
     )
-    return _genai_client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=contents if contents is not None else prompt,
-        config=config,
-    )
+    try:
+        return _genai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents if contents is not None else prompt,
+            config=config,
+        )
+    except Exception as e:
+        err_msg = str(e)
+        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg or "quota" in err_msg.lower():
+            raise Exception("Gemini API quota or rate limit exceeded. Please wait a bit before trying again, or check your API key usage limits in Google AI Studio.") from e
+        raise e
 
 
 # --------------------------------------------------------------------------
@@ -99,6 +105,7 @@ def scored(emp: Employee) -> Dict[str, Any]:
     d["riskScore"] = pred["riskScore"]
     d["riskLevel"] = pred["riskLevel"]
     d["topRiskFactors"] = pred["topRiskFactors"]
+    d["confidenceScore"] = pred.get("confidenceScore", 85)
     return d
 
 
@@ -172,9 +179,21 @@ async def train(request: Request):
             "num_companies_worked": ["numcompaniesworked", "priorcompanies", "numberofcompanies", "companiesworked"],
             "training_hours_last_year": ["traininghourslastyear", "traininghours", "trainingcompleted"],
             "attrition": ["attrition", "left", "resigned", "hasleft", "status", "attritionstatus"],
-            # Fallback-only field: used purely to detect numeric overtime hours
-            # (e.g. "overtimeHours") when no Yes/No overtime column exists.
             "_overtime_hours": ["overtimehours", "weeklyovertimehours"],
+            "email": ["email", "emailaddress", "mail", "empemail"],
+            "gender": ["gender", "sex"],
+            "marital_status": ["maritalstatus", "marital", "relationshipstatus"],
+            "job_level": ["joblevel", "level", "grade"],
+            "years_in_role": ["yearsinrole", "yearsincurrentrole", "timeinrole"],
+            "years_with_curr_manager": ["yearswithcurrmanager", "yearswithmanager", "tenurewithmanager", "withmanager"],
+            "incentives_bonus": ["incentivesbonus", "incentives", "bonus", "bonusamount"],
+            "market_benchmark": ["marketbenchmark", "benchmark", "marketrate"],
+            "benefits_satisfaction": ["benefitssatisfaction", "benefitssat", "benefitsrating"],
+            "weekly_hours": ["weeklyhours", "hoursperweek", "workhours"],
+            "weekend_work": ["weekendwork", "weekends"],
+            "travel_frequency": ["travelfrequency", "travel", "businesstravel"],
+            "manager_relation": ["managerrelation", "managerrelationship", "managerrating", "relationswithmanager"],
+            "recognition_frequency": ["recognitionfrequency", "recognition", "recognitionrating"],
         }
         # If an exact alias isn't found, fall back to scanning every column
         # name for these substrings (checked in priority order). This catches
@@ -189,7 +208,7 @@ async def train(request: Request):
         }
         # Fields where a missing column is expected/optional and shouldn't be
         # reported back to the user as a "column not found" warning.
-        _OPTIONAL_FIELDS = {"id", "attrition", "years_since_last_promotion", "num_companies_worked", "training_hours_last_year", "_overtime_hours", "overtime"}
+        _OPTIONAL_FIELDS = {"id", "attrition", "years_since_last_promotion", "num_companies_worked", "training_hours_last_year", "_overtime_hours", "overtime", "email", "gender", "marital_status", "job_level", "years_in_role", "years_with_curr_manager", "incentives_bonus", "market_benchmark", "benefits_satisfaction", "weekly_hours", "weekend_work", "travel_frequency", "manager_relation", "recognition_frequency"}
 
         parsed: List[Employee] = []
         field_match_counts: Dict[str, int] = {f: 0 for f in _FIELD_ALIASES}
@@ -246,20 +265,57 @@ async def train(request: Request):
             distance_from_home_km = _to_float(pick("distance_from_home_km"), 10)
 
             overtime_field_val = pick("overtime")
-            if overtime_field_val is not None:
-                overtime_raw = str(overtime_field_val).strip().lower()
-                overtime = "Yes" if overtime_raw.startswith("y") or overtime_raw in ("1", "true") else "No"
-            else:
-                # No Yes/No overtime column — fall back to numeric overtime
-                # hours if the file has one (e.g. "overtimeHours": 13).
-                overtime_hours = _to_float(pick("_overtime_hours"), 0)
-                overtime = "Yes" if overtime_hours > 5 else "No"
+            if overtime_field_val is None:
+                overtime_field_val = pick("_overtime_hours")
 
-            job_satisfaction = max(1, min(4, int(_to_float(pick("job_satisfaction"), 3))))
-            work_life_balance = max(1, min(4, int(_to_float(pick("work_life_balance"), 3))))
-            environment_satisfaction = max(1, min(4, int(_to_float(pick("environment_satisfaction"), 3))))
+            if overtime_field_val is not None:
+                overtime_raw = str(overtime_field_val).strip()
+                try:
+                    overtime = int(float(overtime_raw.replace(",", "").replace("₹", "").strip()))
+                except ValueError:
+                    overtime_lower = overtime_raw.lower()
+                    if overtime_lower.startswith("y") or overtime_lower in ("1", "true"):
+                        overtime = 15
+                    else:
+                        overtime = 0
+            else:
+                overtime = 0
+
+            job_satisfaction = max(1, min(5, int(_to_float(pick("job_satisfaction"), 3))))
+            work_life_balance = max(1, min(5, int(_to_float(pick("work_life_balance"), 3))))
+            environment_satisfaction = max(1, min(5, int(_to_float(pick("environment_satisfaction"), 3))))
             num_companies_worked = _to_float(pick("num_companies_worked"), 1)
             training_hours_last_year = _to_float(pick("training_hours_last_year"), 24)
+
+            # Pick or fallback new fields
+            email_val = pick("email")
+            email = str(email_val).strip() if email_val is not None else (name.lower().replace(" ", ".") + "@company.com")
+
+            gender_val = pick("gender")
+            gender = str(gender_val).strip() if gender_val is not None else ("Male" if int(age) % 2 == 0 else "Female")
+
+            marital_status_val = pick("marital_status")
+            marital_status = str(marital_status_val).strip() if marital_status_val is not None else ("Married" if int(age) > 30 else "Single")
+
+            job_level = int(_to_float(pick("job_level"), max(1, min(5, int(years_at_company / 3) + 1))))
+            years_in_role = int(_to_float(pick("years_in_role"), max(0, min(years_at_company, 2))))
+            years_with_curr_manager = int(_to_float(pick("years_with_curr_manager"), max(0, min(years_at_company, 3))))
+
+            incentives_bonus = float(_to_float(pick("incentives_bonus"), round(monthly_income * 2.0)))
+            annual_salary = monthly_income * 12
+            market_benchmark = float(_to_float(pick("market_benchmark"), round(annual_salary * 1.15)))
+
+            benefits_satisfaction = int(_to_float(pick("benefits_satisfaction"), 3))
+            weekly_hours = int(_to_float(pick("weekly_hours"), 40))
+
+            weekend_work_val = pick("weekend_work")
+            weekend_work = str(weekend_work_val).strip() if weekend_work_val is not None else "Not Required"
+
+            travel_frequency_val = pick("travel_frequency")
+            travel_frequency = str(travel_frequency_val).strip() if travel_frequency_val is not None else "Rarely"
+
+            manager_relation = int(_to_float(pick("manager_relation"), 4))
+            recognition_frequency = int(_to_float(pick("recognition_frequency"), 3))
 
             attrition = None
             attrition_val = pick("attrition")
@@ -277,6 +333,13 @@ async def train(request: Request):
                 environment_satisfaction=environment_satisfaction,
                 num_companies_worked=int(num_companies_worked),
                 training_hours_last_year=int(training_hours_last_year),
+                email=email, gender=gender, marital_status=marital_status,
+                job_level=job_level, years_in_role=years_in_role,
+                years_with_curr_manager=years_with_curr_manager,
+                incentives_bonus=incentives_bonus, market_benchmark=market_benchmark,
+                benefits_satisfaction=benefits_satisfaction, weekly_hours=weekly_hours,
+                weekend_work=weekend_work, travel_frequency=travel_frequency,
+                manager_relation=manager_relation, recognition_frequency=recognition_frequency,
                 attrition=attrition,
             ))
 
@@ -373,7 +436,7 @@ def _fallback_retention_email(emp: Employee) -> str:
         "",
         "In particular, I'd love to check in on a couple of areas:",
     ]
-    if emp.overtime == "Yes":
+    if emp.overtime > 5:
         lines.append("- **Workload & Balance**: How you're finding the recent workload pacing and whether we can optimize overtime needs.")
     if emp.job_satisfaction <= 2:
         lines.append("- **Role Fulfillment**: Exploring if there are specific projects, tools, or resources that would make your daily work more satisfying.")
@@ -406,7 +469,7 @@ def _fallback_talking_points(emp: Employee) -> str:
         "",
         "**2. Focus on Core Risk Areas (The Pivot)**",
     ]
-    if emp.overtime == "Yes":
+    if emp.overtime > 5:
         lines.append("* **Address Burnout**: 'I know you've put in overtime recently. Let's look at the projects causing this and see how we can redistribute tasks.'")
     if emp.job_satisfaction <= 2:
         lines.append(f"* **Role Satisfaction**: 'Are there parts of your current role as {emp.role} that feel repetitive or where you feel blocked? Let's talk about alignment.'")
@@ -458,10 +521,10 @@ EMPLOYEE PROFILE:
 - Tenure: {emp.years_at_company} years
 - Monthly Income: ₹{emp.monthly_income:,.0f}
 - Commute: {emp.distance_from_home_km} km from home
-- Overtime requirement: {emp.overtime}
-- Job Satisfaction: {emp.job_satisfaction}/4
-- Work-Life Balance: {emp.work_life_balance}/4
-- Workplace Environment Satisfaction: {emp.environment_satisfaction}/4
+- Overtime requirement: {emp.overtime} hrs/week
+- Job Satisfaction: {emp.job_satisfaction}/5
+- Work-Life Balance: {emp.work_life_balance}/5
+- Workplace Environment Satisfaction: {emp.environment_satisfaction}/5
 {risk_section}
 Instructions: {config['instructions']}
 Keep the communication realistic, professional, and structured with placeholders like [Manager Name] or [Proposed Review Date] where appropriate. Write only in clean Markdown."""
@@ -592,6 +655,52 @@ async def chat(request: Request):
             for e in top15
         ) or "No employee data loaded yet."
 
+        # Compute heatmap summaries dynamically to give chatbot full visibility into the active Heatmap tab
+        reasons_summary = {}
+        for e in current_employees:
+            pred = classifier.predict(e)
+            top_factors = pred.get("topRiskFactors", [])
+            reason = "Other"
+            if top_factors:
+                top_feat = top_factors[0]["factor"]
+                if top_feat in ("overtime", "work_life_balance"):
+                    reason = "Better work/life balance"
+                elif top_feat == "distance_from_home_km":
+                    reason = "Change of location"
+                elif top_feat in ("monthly_income", "incentives_bonus", "market_benchmark", "benefits_satisfaction"):
+                    reason = "Better pay and benefits"
+                elif top_feat in ("environment_satisfaction", "job_satisfaction"):
+                    reason = "Culture and climate"
+                elif top_feat in ("years_since_last_promotion", "num_companies_worked", "job_level"):
+                    reason = "Career development"
+                elif top_feat in ("manager_relation", "years_with_curr_manager"):
+                    reason = "Relationship with manager"
+            
+            # Map tenure
+            t = e.years_at_company
+            if t <= 1:
+                tenure_seg = "0 - 1 Years"
+            elif t <= 2:
+                tenure_seg = "1 - 2 Years"
+            elif t <= 5:
+                tenure_seg = "2 - 5 Years"
+            elif t <= 10:
+                tenure_seg = "5 - 10 Years"
+            elif t <= 20:
+                tenure_seg = "10 - 20 Years"
+            else:
+                tenure_seg = "20+ Years"
+
+            if reason not in reasons_summary:
+                reasons_summary[reason] = {}
+            reasons_summary[reason][tenure_seg] = reasons_summary[reason].get(tenure_seg, 0) + 1
+
+        heatmap_lines = []
+        for reason, segments in reasons_summary.items():
+            seg_str = ", ".join(f"{seg}: {count} employees" for seg, count in sorted(segments.items()))
+            heatmap_lines.append(f"- {reason} -> {seg_str}")
+        heatmap_text = "\n".join(heatmap_lines) or "No heatmap data."
+
         dataset_summary = f"""
 Total employees in system: {total}
 Average risk score: {avg_risk}/100
@@ -601,13 +710,18 @@ Departments: {', '.join(f'{d} ({c})' for d, c in by_dept.items()) or 'none'}
 
 Top 15 highest-risk employees (id, name, dept, role, riskScore, riskLevel):
 {top15_lines}
+
+Active Heatmap Data (Reasons for leaving grouped by tenure):
+{heatmap_text}
 """
 
         system_instruction = f"""You are an AI HR Assistant embedded in an Employee Resignation Risk Predictor platform used by Indian HR teams.
+Explain all resignation risks, retention concepts, employee metrics, and analytics in very simple, friendly, and easy-to-understand language. Avoid complicated tech or math jargon so the user can easily follow your advice.
 You can answer questions about the currently loaded employee dataset (summarized below), explain resignation risk concepts, suggest retention strategies, and help HR think through people-management decisions.
 You do NOT have the ability to take real actions (you cannot send emails, edit records, or modify data) — you can only inform, analyze, and draft text for the user to review and use themselves.
 Never invent specific employee data that isn't in the summary provided. If asked about a specific employee not listed in the summary, say you only have visibility into the highest-risk employees in this conversation and suggest they open that employee's profile in the app for full detail.
 Be concise, warm, and professional. Use Markdown formatting for lists/structure when helpful.
+
 
 CURRENT DATASET SUMMARY:
 {dataset_summary}"""
