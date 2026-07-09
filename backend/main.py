@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, Request
+import jwt
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel
+from datetime import timedelta
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -157,12 +162,114 @@ def scored(emp: Employee) -> Dict[str, Any]:
     return d
 
 
+
+# --------------------------------------------------------------------------
+# Authentication
+# --------------------------------------------------------------------------
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "fallback_secret_for_development_only")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    role: str = "manager"
+
+class SocialLoginRequest(BaseModel):
+    provider: str
+    token: str
+    email: str
+    name: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user: Dict[str, Any]
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+    except jwt.PyJWTError:
+        raise credentials_exception
+    user = await dbmod.get_user_by_email(email)
+    if user is None:
+        raise credentials_exception
+    return user
+
+@app.post("/api/auth/register")
+async def auth_register(req: RegisterRequest):
+    existing = await dbmod.get_user_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user = await dbmod.create_user(req.email, req.name, req.role, req.password)
+    return {"message": "User registered successfully"}
+
+@app.post("/api/auth/login", response_model=Token)
+async def auth_login(req: LoginRequest, request: Request):
+    user = await dbmod.get_user_by_email(req.email)
+    if not user:
+        await dbmod.log_failed_login(req.email, request.client.host if request.client else "unknown", "User not found")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    if not user.get("is_sso"):
+        if not dbmod.verify_password(req.password, user["password_hash"], user["salt"]):
+            await dbmod.log_failed_login(req.email, request.client.host if request.client else "unknown", "Invalid password")
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+    
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"sub": user["email"], "exp": expire}
+    access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    user_out = dict(user)
+    user_out.pop("password_hash", None)
+    user_out.pop("salt", None)
+    
+    return {"access_token": access_token, "token_type": "bearer", "user": user_out}
+
+@app.post("/api/auth/social-login", response_model=Token)
+async def auth_social_login(req: SocialLoginRequest):
+    user = await dbmod.get_user_by_email(req.email)
+    if not user:
+        user = await dbmod.create_user(req.email, req.name, "manager", is_sso=True)
+        
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"sub": user["email"], "exp": expire}
+    access_token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    user_out = dict(user)
+    user_out.pop("password_hash", None)
+    user_out.pop("salt", None)
+    return {"access_token": access_token, "token_type": "bearer", "user": user_out}
+
+@app.get("/api/auth/me")
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    user_out = dict(current_user)
+    user_out.pop("password_hash", None)
+    user_out.pop("salt", None)
+    return user_out
+
 # --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
 
+
 @app.get("/api/health")
-async def health():
+async def health(current_user: dict = Depends(get_current_user)):
     return {
         "status": "ok",
         "modelTrained": True,
@@ -174,7 +281,7 @@ async def health():
 
 
 @app.get("/api/import-history")
-async def import_history():
+async def import_history(current_user: dict = Depends(get_current_user)):
     try:
         history = await dbmod.get_import_history()
         return {"dbConnected": dbmod.is_db_connected(), "history": history}
@@ -183,12 +290,12 @@ async def import_history():
 
 
 @app.get("/api/audit-log")
-async def get_audit_log():
+async def get_audit_log(current_user: dict = Depends(get_current_user)):
     return audit_log
 
 
 @app.get("/api/employees")
-async def get_employees():
+async def get_employees(current_user: dict = Depends(get_current_user)):
     try:
         return [scored(e) for e in current_employees]
     except Exception as err:  # noqa: BLE001
@@ -196,7 +303,7 @@ async def get_employees():
 
 
 @app.post("/api/train")
-async def train(request: Request):
+async def train(request: Request, current_user: dict = Depends(get_current_user)):
     global current_employees
     try:
         body = await request.json()
@@ -631,7 +738,7 @@ def clean_and_parse_json(text: str) -> dict:
 
 
 @app.post("/api/auto-compare")
-async def auto_compare(request: Request):
+async def auto_compare(request: Request, current_user: dict = Depends(get_current_user)):
     try:
         if _genai_client is None:
             return JSONResponse(status_code=500, content={"error": "Gemini API key is missing. Cannot perform AI auto-compare."})
@@ -702,7 +809,7 @@ Return ONLY the JSON object. Do not include markdown wraps around the JSON block
 
 
 @app.post("/api/chat")
-async def chat(request: Request):
+async def chat(request: Request, current_user: dict = Depends(get_current_user)):
     try:
         if _groq_client is None:
             return JSONResponse(status_code=500, content={

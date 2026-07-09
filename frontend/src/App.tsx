@@ -12,6 +12,8 @@ import { motion, AnimatePresence } from "motion/react";
 import * as XLSX from "xlsx";
 import { SettingsModal } from "./components/SettingsModal";
 import { LandingPage } from "./components/LandingPage";
+import { AuthModal } from "./components/AuthModal";
+import { useAuth } from "./AuthContext";
 import {
   Users,
   TrendingUp,
@@ -380,6 +382,20 @@ function AnimatedCounter({ value, duration = 1000, suffix = "", decimals = 0 }: 
 }
 
 export default function App() {
+  const { user, token, isAuthenticated, isLoading: authLoading, logout } = useAuth();
+
+  // Controls the auth modal (shown only when user tries to open dashboard while logged out)
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Authenticated fetch helper — automatically attaches Bearer token
+  const authFetch = (url: string, options: RequestInit = {}): Promise<Response> => {
+    const headers: Record<string, string> = {
+      ...(options.headers as Record<string, string>),
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    return fetch(url, { ...options, headers });
+  };
+
   const [lang, setLang] = useState<"en" | "hi" | "gu" | "mr" | "ta" | "te">("en");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
@@ -396,6 +412,22 @@ export default function App() {
     const saved = localStorage.getItem('userSettings');
     return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
   });
+
+  // Once login succeeds, close the modal and navigate to dashboard
+  useEffect(() => {
+    if (isAuthenticated && showAuthModal) {
+      setShowAuthModal(false);
+      setActiveTab('home');
+    }
+  }, [isAuthenticated, showAuthModal, activeTab]);
+
+  // Auth guard: If logged out and trying to view a protected tab, force back to landing
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated && activeTab !== 'landing') {
+      setActiveTab('landing');
+      setShowAuthModal(true);
+    }
+  }, [isAuthenticated, activeTab, authLoading]);
 
   useEffect(() => {
     localStorage.setItem('userSettings', JSON.stringify(settings));
@@ -442,7 +474,7 @@ export default function App() {
     setIsChatLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await authFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -473,7 +505,7 @@ export default function App() {
   const fetchEmployees = async () => {
     try {
       setLoadingData(true);
-      const res = await fetch("/api/employees");
+      const res = await authFetch("/api/employees");
       if (!res.ok) throw new Error("Could not fetch data");
       const data = await res.json();
       setEmployees(data);
@@ -580,7 +612,7 @@ export default function App() {
         showToast("For reliable machine learning training, please upload at least 5 rows.", "error");
       }
 
-      const response = await fetch("/api/train", {
+      const response = await authFetch("/api/train", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employees: parsedRows, fileName: file.name }),
@@ -651,7 +683,7 @@ export default function App() {
     }, 1200);
 
     try {
-      const res = await fetch("/api/draft", {
+      const res = await authFetch("/api/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: selectedEmp.id, type: draftType }),
@@ -966,6 +998,22 @@ export default function App() {
     }
   ];
 
+  // Show loading spinner while auth restores from localStorage
+  if (authLoading) {
+    return (
+      <div
+        data-theme={settings.accent || 'emerald'}
+        data-mode={settings.theme === 'dark' ? 'dark' : 'light'}
+        className="min-h-screen flex items-center justify-center bg-[var(--c9)]"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-[var(--c16)]/30 border-t-[var(--c16)] rounded-full animate-spin" />
+          <p className="text-[var(--c13)] text-sm font-medium">Loading workspace…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div data-theme={settings.accent || 'emerald'} data-mode={settings.theme === 'dark' ? 'dark' : 'light'} className={`min-h-screen bg-[var(--c9)] text-[var(--c18)] ${settings.backgroundImage && settings.backgroundImage !== 'none' ? 'bg-image-' + settings.backgroundImage : ''} ${settings.font === 'serif' ? 'font-serif'
       : settings.font === 'mono' ? 'font-mono'
@@ -980,8 +1028,19 @@ export default function App() {
         setSettings={setSettings}
       />
 
+      {/* Auth modal — shown only when user clicks "Launch Dashboard" while logged out */}
+      {showAuthModal && (
+        <AuthModal
+          settings={settings}
+          onClose={() => setShowAuthModal(false)}
+        />
+      )}
+
       {activeTab === "landing" ? (
-        <LandingPage onLaunch={() => setActiveTab("home")} />
+        <LandingPage onLaunch={() => {
+          if (isAuthenticated) setActiveTab("home");
+          else setShowAuthModal(true);
+        }} />
       ) : (
         <>
       {/* 1. LEFT SIDE NAVIGATION PANEL (Sidebar) */}
@@ -1087,13 +1146,31 @@ export default function App() {
         </div>
 
         {/* Bottom Actions */}
-        <div className="mt-4">
+        <div className="mt-4 space-y-3">
+          {/* Logged-in user info */}
+          {user && (
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-[var(--c2)]/60 rounded-xl">
+              <div className="h-7 w-7 rounded-full bg-[var(--c16)] flex items-center justify-center text-white text-[11px] font-extrabold shrink-0">
+                {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+              </div>
+              <div className="overflow-hidden flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-[var(--c18)] truncate">{user.name || user.email}</p>
+                <p className="text-[10px] text-[var(--c13)] capitalize">{user.role}</p>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col gap-2 text-[11px] text-[var(--c13)] font-semibold">
             <button onClick={() => setIsSettingsOpen(true)} className="hover:text-[var(--c18)] flex items-center gap-2 cursor-pointer bg-[var(--c2)]/40 hover:bg-[var(--c2)] px-3 py-2.5 rounded-xl transition-colors">
               <Settings className="h-4 w-4" /> Settings
             </button>
             <button onClick={() => setActiveTab("landing")} className="hover:text-[var(--c18)] flex items-center gap-2 cursor-pointer bg-[var(--c2)]/40 hover:bg-[var(--c2)] px-3 py-2.5 rounded-xl transition-colors">
               <Home className="h-4 w-4" /> Return to Home Page
+            </button>
+            <button
+              onClick={logout}
+              className="hover:text-red-500 flex items-center gap-2 cursor-pointer bg-red-50/40 hover:bg-red-50 px-3 py-2.5 rounded-xl transition-colors text-red-400"
+            >
+              <LogOut className="h-4 w-4" /> Sign Out
             </button>
           </div>
         </div>
@@ -1227,7 +1304,7 @@ export default function App() {
                         try {
                           setIsGeneratingAiCompare(true);
                           setAiCompareReport(null);
-                          const res = await fetch("/api/auto-compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeIds: compareIds }) });
+                          const res = await authFetch("/api/auto-compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ employeeIds: compareIds }) });
                           if (!res.ok) { const errData = await res.json().catch(() => ({})); throw new Error(errData.error || "Failed to auto compare"); }
                           const data = await res.json();
                           if (data.selected_employee_ids) {
@@ -2082,7 +2159,7 @@ export default function App() {
                           <button
                             onClick={async () => {
                               try {
-                                const res = await fetch("/api/seed-sample", { method: "POST" });
+                                const res = await authFetch("/api/seed-sample", { method: "POST" });
                                 if (!res.ok) throw new Error("Failed to load sample data");
                                 const data = await res.json();
                                 showToast(`Loaded ${data.rowCount} sample employees`, "success");
