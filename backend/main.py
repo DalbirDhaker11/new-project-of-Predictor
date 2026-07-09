@@ -73,7 +73,7 @@ def _generate_content(prompt: str, system_instruction: str, temperature: float =
         response_mime_type="application/json" if json_mode else None,
     )
     return _genai_client.models.generate_content(
-        model="gemini-3.5-flash",
+        model="gemini-3.1-flash-lite",
         contents=contents if contents is not None else prompt,
         config=config,
     )
