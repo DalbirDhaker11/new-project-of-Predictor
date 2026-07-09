@@ -169,7 +169,8 @@ export function AuthModal({ settings, onClose }: AuthModalProps = {}) {
     if (!captchaOk) { setError('Please solve the security check first.'); return; }
     setError(null); setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: loginEmail, password: loginPassword }) });
+      const baseUrl = import.meta.env.VITE_SERVER_URL || "";
+      const res = await fetch(baseUrl + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: loginEmail, password: loginPassword }) });
       if (!res.ok) { let d = 'Login failed'; try { d = (await res.json()).detail || d; } catch {} resetCaptcha(); throw new Error(d); }
       const data = await res.json();
       login(data.access_token, data.user);
@@ -184,7 +185,8 @@ export function AuthModal({ settings, onClose }: AuthModalProps = {}) {
     if (regPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: regEmail, password: regPassword, name: regName, role: 'manager' }) });
+      const baseUrl = import.meta.env.VITE_SERVER_URL || "";
+      const res = await fetch(baseUrl + '/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: regEmail, password: regPassword, name: regName, role: 'manager' }) });
       if (!res.ok) { let d = 'Registration failed'; try { d = (await res.json()).detail || d; } catch {} throw new Error(d); }
       setSuccess('Account created! You can now sign in.');
       setRegName(''); setRegEmail(''); setRegPassword(''); setRegConfirm('');
@@ -197,7 +199,8 @@ export function AuthModal({ settings, onClose }: AuthModalProps = {}) {
   const handleGoogle = async () => {
     setError(null); setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/social-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'Google', token: 'mock_token_123', email: 'google_user@errp.ai', name: 'Google User' }) });
+      const baseUrl = import.meta.env.VITE_SERVER_URL || "";
+      const res = await fetch(baseUrl + '/api/auth/social-login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'Google', token: 'mock_token_123', email: 'google_user@errp.ai', name: 'Google User' }) });
       if (!res.ok) throw new Error('Google login failed');
       const data = await res.json();
       login(data.access_token, data.user);
