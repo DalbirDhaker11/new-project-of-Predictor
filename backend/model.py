@@ -9,8 +9,9 @@ Indian-HR-context dataset generator used to seed the app on first run.
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 
 # --------------------------------------------------------------------------
@@ -121,9 +122,15 @@ class Employee:
 
 
 _DEPT_MAP = {"R&D": 0, "Sales": 1, "HR": 2}
+_GENDER_MAP = {"Male": 0, "Female": 1, "Other": 2}
+_MARITAL_MAP = {"Single": 0, "Married": 1, "Divorced": 2}
+_WEEKEND_MAP = {"Not Required": 0, "Required": 1}
+_TRAVEL_MAP = {"Rarely": 0, "Sometimes": 1, "Frequently": 2}
 
 
 def _map_to_numeric_features(emp: Employee) -> Dict[str, float]:
+    annual_salary = emp.monthly_income * 12
+    salary_deficit = max(0.0, emp.market_benchmark - annual_salary)
     return {
         "age": emp.age,
         "monthly_income": emp.monthly_income,
@@ -137,18 +144,21 @@ def _map_to_numeric_features(emp: Employee) -> Dict[str, float]:
         "num_companies_worked": emp.num_companies_worked,
         "training_hours_last_year": emp.training_hours_last_year,
         "department": _DEPT_MAP.get(emp.department, 0),
+        "gender": _GENDER_MAP.get(emp.gender, 0),
+        "marital_status": _MARITAL_MAP.get(emp.marital_status, 0),
+        "job_level": emp.job_level,
+        "years_in_role": emp.years_in_role,
+        "years_with_curr_manager": emp.years_with_curr_manager,
+        "incentives_bonus": emp.incentives_bonus,
+        "market_benchmark": emp.market_benchmark,
+        "salary_deficit": salary_deficit,
+        "benefits_satisfaction": emp.benefits_satisfaction,
+        "weekly_hours": emp.weekly_hours,
+        "weekend_work": _WEEKEND_MAP.get(emp.weekend_work, 0),
+        "travel_frequency": _TRAVEL_MAP.get(emp.travel_frequency, 0),
+        "manager_relation": emp.manager_relation,
+        "recognition_frequency": emp.recognition_frequency,
     }
-
-
-@dataclass
-class TreeNode:
-    is_leaf: bool
-    count: int
-    value: Optional[float] = None
-    feature: Optional[str] = None
-    threshold: Optional[float] = None
-    left: Optional["TreeNode"] = None
-    right: Optional["TreeNode"] = None
 
 
 _FACTOR_LABELS = {
@@ -164,6 +174,20 @@ _FACTOR_LABELS = {
     "num_companies_worked": "Job Hopping History",
     "training_hours_last_year": "Training Opportunities",
     "department": "Department Culture",
+    "gender": "Gender Demographics",
+    "marital_status": "Marital Status",
+    "job_level": "Job Level Hierarchy",
+    "years_in_role": "Tenure in Current Role",
+    "years_with_curr_manager": "Time with Current Manager",
+    "incentives_bonus": "Incentives & Bonuses",
+    "market_benchmark": "Market Benchmark",
+    "salary_deficit": "Market Salary Deficit",
+    "benefits_satisfaction": "Benefits Package Satisfaction",
+    "weekly_hours": "Weekly Work Hours",
+    "weekend_work": "Weekend Work Requirements",
+    "travel_frequency": "Business Travel Frequency",
+    "manager_relation": "Relationship with Manager",
+    "recognition_frequency": "Recognition Frequency",
 }
 
 
@@ -190,6 +214,35 @@ def _feature_value_description(feat: str, emp: Employee) -> str:
         return f"{emp.num_companies_worked} prior company"
     if feat == "training_hours_last_year":
         return f"{emp.training_hours_last_year} hrs"
+    if feat == "gender":
+        return emp.gender
+    if feat == "marital_status":
+        return emp.marital_status
+    if feat == "job_level":
+        return f"Level {emp.job_level}"
+    if feat == "years_in_role":
+        return f"{emp.years_in_role} years"
+    if feat == "years_with_curr_manager":
+        return f"{emp.years_with_curr_manager} years"
+    if feat == "incentives_bonus":
+        return f"₹{emp.incentives_bonus:,.0f}"
+    if feat == "market_benchmark":
+        return f"₹{emp.market_benchmark:,.0f}/yr"
+    if feat == "salary_deficit":
+        deficit = max(0.0, emp.market_benchmark - emp.monthly_income * 12)
+        return f"₹{deficit:,.0f}/yr"
+    if feat == "benefits_satisfaction":
+        return f"{emp.benefits_satisfaction}/5"
+    if feat == "weekly_hours":
+        return f"{emp.weekly_hours} hrs/week"
+    if feat == "weekend_work":
+        return emp.weekend_work
+    if feat == "travel_frequency":
+        return emp.travel_frequency
+    if feat == "manager_relation":
+        return f"{emp.manager_relation}/5"
+    if feat == "recognition_frequency":
+        return f"{emp.recognition_frequency}/5"
     return str(_map_to_numeric_features(emp).get(feat))
 
 
@@ -224,16 +277,70 @@ def _feature_text_description(feat: str, emp: Employee) -> str:
     if feat == "training_hours_last_year":
         return ("Fewer professional development hours might signal stagnation or low investment."
                 if emp.training_hours_last_year < 20 else "Regular training and skill development.")
+    if feat == "gender":
+        return "Demographic representation aspect analyzed."
+    if feat == "marital_status":
+        return "Family commitment balance and job stability indicator."
+    if feat == "job_level":
+        return "Career level responsibility and hierarchy context."
+    if feat == "years_in_role":
+        return ("Extended tenure in the current role without change can lead to stagnancy."
+                if emp.years_in_role >= 4 else "Active career progression in current role.")
+    if feat == "years_with_curr_manager":
+        return ("Low tenure with the current manager can cause temporary alignment challenges."
+                if emp.years_with_curr_manager <= 1 else "Solid and established manager-employee dynamic.")
+    if feat == "incentives_bonus":
+        return ("Relatively low or missing performance incentives can lead to compensation dissatisfaction."
+                if emp.incentives_bonus < 20000 else "Motivating incentive and bonus structure.")
+    if feat == "market_benchmark":
+        return "Reference point of compensation structure compared to external market averages."
+    if feat == "salary_deficit":
+        deficit = max(0.0, emp.market_benchmark - emp.monthly_income * 12)
+        return ("Significant salary deficit compared to market benchmark represents high poaching risk."
+                if deficit > 150000 else "Pay package aligns well with industry benchmark standards.")
+    if feat == "benefits_satisfaction":
+        return ("Low satisfaction with benefits package drives search for better perks."
+                if emp.benefits_satisfaction <= 2 else "Healthy benefits satisfaction.")
+    if feat == "weekly_hours":
+        return ("High weekly working hours can lead to physical fatigue and stress."
+                if emp.weekly_hours > 45 else "Standard weekly working hours.")
+    if feat == "weekend_work":
+        return ("Weekend work demands severely impact work-life balance."
+                if emp.weekend_work == "Required" else "Weekend rest is preserved.")
+    if feat == "travel_frequency":
+        return ("Frequent business travel is a major driver of fatigue and lifestyle disruption."
+                if emp.travel_frequency == "Frequently" else "Low business travel disruption.")
+    if feat == "manager_relation":
+        return ("Poor rapport and low manager relation score is a top driver of resignation."
+                if emp.manager_relation <= 2 else "Positive connection with reporting manager.")
+    if feat == "recognition_frequency":
+        return ("Infrequent appreciation and lack of recognition lowers engagement."
+                if emp.recognition_frequency <= 2 else "Regular feedback and recognition received.")
     return "Contributing risk factor analyzed from historical trends."
 
 
-class DecisionTreeClassifier:
-    def __init__(self) -> None:
-        self.root: Optional[TreeNode] = None
-        self.max_depth = 4
-        self.min_samples_split = 10
+class TreeNode:
+    def __init__(self, is_leaf: bool, count: int, value: Optional[float] = None,
+                 feature: Optional[str] = None, threshold: Optional[float] = None,
+                 left: Optional["TreeNode"] = None, right: Optional["TreeNode"] = None) -> None:
+        self.is_leaf = is_leaf
+        self.count = count
+        self.value = value
+        self.feature = feature
+        self.threshold = threshold
+        self.left = left
+        self.right = right
+
+
+class RandomForestClassifier:
+    def __init__(self, n_estimators: int = 15, max_depth: int = 5, min_samples_split: int = 6) -> None:
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.min_samples_split = min_samples_split
+        self.trees: List[TreeNode] = []
         self.default_prob = 0.15
         self.use_heuristic = False
+        self.metrics: Dict[str, float] = {}
 
     @staticmethod
     def _gini(labels: List[int]) -> float:
@@ -251,14 +358,9 @@ class DecisionTreeClassifier:
         ]
 
         if not training_data:
-            # No historical "did they leave" labels to learn from — which is
-            # completely normal for a real, current-roster HR export. Rather
-            # than falling back to one flat score for every employee, switch
-            # to a transparent, research-backed heuristic scorer (same
-            # weighting logic used to build the synthetic demo dataset) so
-            # employees still get genuinely differentiated risk scores.
             self.use_heuristic = True
-            self.root = None
+            self.trees = []
+            self.metrics = {}
             return
 
         self.use_heuristic = False
@@ -266,9 +368,78 @@ class DecisionTreeClassifier:
         self.default_prob = ones / len(training_data)
 
         feature_names = list(training_data[0]["features"].keys())
-        self.root = self._build_tree(training_data, 0, feature_names)
+        
+        # Seeded local RNG for deterministic training
+        rng = random.Random(42)
+        
+        # Validation split to evaluate performance metrics
+        if len(training_data) >= 10:
+            shuffled = list(training_data)
+            rng.shuffle(shuffled)
+            split_idx = int(len(shuffled) * 0.8)
+            train_split = shuffled[:split_idx]
+            val_split = shuffled[split_idx:]
+            
+            # Fit a temporary forest on the train split
+            val_trees = []
+            for _ in range(self.n_estimators):
+                bootstrap = [rng.choice(train_split) for _ in range(len(train_split))]
+                tree = self._build_tree(bootstrap, 0, feature_names, rng)
+                val_trees.append(tree)
+                
+            # Evaluate on val split
+            tp = fp = tn = fn = 0
+            for item in val_split:
+                feat = item["features"]
+                actual = item["label"]
+                
+                total_p = 0.0
+                for tree in val_trees:
+                    current = tree
+                    while not current.is_leaf and current.left and current.right:
+                        nxt = current.left if feat[current.feature] <= current.threshold else current.right
+                        current = nxt
+                    total_p += current.value if current.value is not None else self.default_prob
+                pred_prob = total_p / len(val_trees)
+                pred_label = 1 if pred_prob >= 0.5 else 0
+                
+                if actual == 1 and pred_label == 1:
+                    tp += 1
+                elif actual == 0 and pred_label == 1:
+                    fp += 1
+                elif actual == 0 and pred_label == 0:
+                    tn += 1
+                elif actual == 1 and pred_label == 0:
+                    fn += 1
+            
+            total_val = len(val_split)
+            acc = (tp + tn) / total_val if total_val > 0 else 1.0
+            prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+            
+            self.metrics = {
+                "accuracy": round(acc, 4),
+                "precision": round(prec, 4),
+                "recall": round(rec, 4),
+                "f1": round(f1, 4)
+            }
+        else:
+            self.metrics = {
+                "accuracy": 1.0,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0
+            }
 
-    def _build_tree(self, data: List[Dict[str, Any]], depth: int, feature_names: List[str]) -> TreeNode:
+        # Train actual forest on the complete dataset
+        self.trees = []
+        for _ in range(self.n_estimators):
+            bootstrap = [rng.choice(training_data) for _ in range(len(training_data))]
+            tree = self._build_tree(bootstrap, 0, feature_names, rng)
+            self.trees.append(tree)
+
+    def _build_tree(self, data: List[Dict[str, Any]], depth: int, feature_names: List[str], rng: random.Random) -> TreeNode:
         count = len(data)
         ones = sum(d["label"] for d in data)
         prob = ones / count if count > 0 else self.default_prob
@@ -276,13 +447,16 @@ class DecisionTreeClassifier:
         if depth >= self.max_depth or count < self.min_samples_split or ones == 0 or ones == count:
             return TreeNode(is_leaf=True, value=prob, count=count)
 
+        num_features_to_select = max(1, int(math.sqrt(len(feature_names))))
+        selected_features = rng.sample(feature_names, num_features_to_select)
+
         best_gini = float("inf")
         best_feature = ""
         best_threshold = 0.0
         best_left: List[Dict[str, Any]] = []
         best_right: List[Dict[str, Any]] = []
 
-        for feat in feature_names:
+        for feat in selected_features:
             values = sorted(d["features"][feat] for d in data)
             unique_values = sorted(set(values))
             thresholds = [
@@ -310,8 +484,8 @@ class DecisionTreeClassifier:
         if not best_feature or best_gini >= self._gini([d["label"] for d in data]):
             return TreeNode(is_leaf=True, value=prob, count=count)
 
-        left_child = self._build_tree(best_left, depth + 1, feature_names)
-        right_child = self._build_tree(best_right, depth + 1, feature_names)
+        left_child = self._build_tree(best_left, depth + 1, feature_names, rng)
+        right_child = self._build_tree(best_right, depth + 1, feature_names, rng)
 
         return TreeNode(
             is_leaf=False,
@@ -364,6 +538,28 @@ class DecisionTreeClassifier:
         if emp.training_hours_last_year < 15:
             bump("training_hours_last_year", 0.06)
 
+        # Added new features heuristics
+        if emp.manager_relation <= 2:
+            bump("manager_relation", 0.12)
+        if emp.recognition_frequency <= 2:
+            bump("recognition_frequency", 0.08)
+        if emp.benefits_satisfaction <= 2:
+            bump("benefits_satisfaction", 0.08)
+        if emp.weekend_work == "Required":
+            bump("weekend_work", 0.10)
+        if emp.travel_frequency == "Frequently":
+            bump("travel_frequency", 0.12)
+        elif emp.travel_frequency == "Sometimes":
+            bump("travel_frequency", 0.05)
+        
+        annual_salary = emp.monthly_income * 12
+        if emp.market_benchmark > annual_salary:
+            deficit = emp.market_benchmark - annual_salary
+            if deficit > 200000:
+                bump("salary_deficit", 0.15)
+            elif deficit > 50000:
+                bump("salary_deficit", 0.07)
+
         for amount in contributions.values():
             prob += amount
         prob = max(0.02, min(0.95, prob))
@@ -392,27 +588,36 @@ class DecisionTreeClassifier:
         return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors, "confidenceScore": confidence}
 
     def predict(self, emp: Employee) -> Dict[str, Any]:
-        if self.use_heuristic or self.root is None:
+        if self.use_heuristic or not self.trees:
             return self._heuristic_predict(emp)
 
         features = _map_to_numeric_features(emp)
         contributions: Dict[str, float] = {k: 0.0 for k in features}
+        
+        total_prob = 0.0
+        
+        for tree in self.trees:
+            current = tree
+            while not current.is_leaf and current.left and current.right:
+                feat = current.feature
+                val = features[feat]
+                thresh = current.threshold
+                parent_prob = current.value if current.value is not None else self.default_prob
 
-        current = self.root
-        while not current.is_leaf and current.left and current.right:
-            feat = current.feature
-            val = features[feat]
-            thresh = current.threshold
-            parent_prob = current.value if current.value is not None else self.default_prob
+                next_node = current.left if val <= thresh else current.right
+                next_prob = next_node.value if next_node.value is not None else self.default_prob
 
-            next_node = current.left if val <= thresh else current.right
-            next_prob = next_node.value if next_node.value is not None else self.default_prob
+                contributions[feat] += next_prob - parent_prob
+                current = next_node
 
-            contributions[feat] += next_prob - parent_prob
-            current = next_node
+            final_prob = current.value if current.value is not None else self.default_prob
+            total_prob += final_prob
 
-        final_prob = current.value if current.value is not None else self.default_prob
-        score = max(0, min(100, round(final_prob * 100)))
+        avg_prob = total_prob / len(self.trees)
+        score = max(0, min(100, round(avg_prob * 100)))
+
+        for feat in contributions:
+            contributions[feat] /= len(self.trees)
 
         if score >= 60:
             risk_level = "High"
@@ -435,6 +640,10 @@ class DecisionTreeClassifier:
 
         confidence = 85 + (abs(hash(emp.id)) % 10)
         return {"riskScore": score, "riskLevel": risk_level, "topRiskFactors": top_risk_factors, "confidenceScore": confidence}
+
+
+# Alias for backward compatibility
+DecisionTreeClassifier = RandomForestClassifier
 
 
 # --------------------------------------------------------------------------

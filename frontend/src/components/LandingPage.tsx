@@ -31,8 +31,8 @@ export function LandingPage({ onLaunch }: LandingPageProps) {
           transition={{ duration: 0.6, ease: "easeOut" }}
           className="flex flex-col items-center space-y-4"
         >
-          <div className="h-16 w-16 rounded-2xl bg-[var(--c16)] flex items-center justify-center text-white shadow-2xl shadow-[var(--c16)]/30 border border-white/20">
-            <Sparkles className="h-8 w-8 text-[var(--c3)]" />
+          <div className="h-24 w-24 rounded-2xl bg-white overflow-hidden flex items-center justify-center shadow-lg border border-slate-100 p-2">
+            <img src="/logo.png" alt="ERRP Logo" className="h-full w-full object-contain scale-[1.3]" />
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--c2)] border border-[var(--c5)]">
             <span className="relative flex h-2 w-2">

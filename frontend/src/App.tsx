@@ -43,7 +43,9 @@ import {
   ChevronDown,
   X,
   Send,
-  MessageSquare
+  MessageSquare,
+  Trash2,
+  Share2
 } from "lucide-react";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 import { jsPDF } from "jspdf";
@@ -405,6 +407,7 @@ export default function App() {
   const [isGeneratingAiCompare, setIsGeneratingAiCompare] = useState(false);
   const [aiCompareReport, setAiCompareReport] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [compareDeptFilter, setCompareDeptFilter] = useState<string>("all");
 
   // Heatmap Controls
   const [heatmapMetric, setHeatmapMetric] = useState<"percentage" | "number">("number");
@@ -483,6 +486,20 @@ export default function App() {
 
   useEffect(() => {
     fetchEmployees();
+  }, []);
+
+  // Check for shared chatbot messages in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sharedText = params.get("chatShare");
+    if (sharedText) {
+      setChatMessages([
+        { role: "model", text: "Hello! I am your AI HR Assistant. You can ask me anything about employee resignation risks, retention strategies, or insights from the loaded employee directory. How can I help you today?" },
+        { role: "model", text: `[Shared Response]:\n\n${sharedText}` }
+      ]);
+      setIsChatOpen(true);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   // Reset previous draft whenever employee selection changes
@@ -728,6 +745,46 @@ export default function App() {
   };
   const promotionScore = getPromotionScore();
 
+  // Dynamic high/low vulnerability departments
+  const departmentRiskMetrics = React.useMemo(() => {
+    if (employees.length === 0) {
+      return {
+        highest: { name: "No Data Available", risk: 0 },
+        lowest: { name: "No Data Available", risk: 0 },
+      };
+    }
+    const deptTotals: Record<string, { sum: number; count: number }> = {};
+    employees.forEach((emp) => {
+      const dept = emp.department || "Unknown";
+      const score = emp.riskScore ?? 0;
+      if (!deptTotals[dept]) {
+        deptTotals[dept] = { sum: 0, count: 0 };
+      }
+      deptTotals[dept].sum += score;
+      deptTotals[dept].count += 1;
+    });
+
+    const depts = Object.keys(deptTotals).map((dept) => ({
+      name: dept,
+      risk: deptTotals[dept].sum / deptTotals[dept].count,
+    }));
+
+    depts.sort((a, b) => b.risk - a.risk);
+
+    return {
+      highest: depts[0],
+      lowest: depts[depts.length - 1],
+    };
+  }, [employees]);
+
+  // Preview employees for Directory Hub portal card (top 2 risk-ranked employees)
+  const previewEmployees = React.useMemo(() => {
+    if (employees.length === 0) return [];
+    return [...employees]
+      .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0))
+      .slice(0, 2);
+  }, [employees]);
+
   // Dynamic commute score
   const getCommuteScore = () => {
     if (employees.length === 0) return "10.0";
@@ -933,8 +990,8 @@ export default function App() {
 
           {/* Logo / Brand */}
           <div className="flex items-center gap-2.5 px-2 py-1">
-            <div className="h-9 w-9 rounded-xl bg-[var(--c16)] flex items-center justify-center text-white font-black shadow-inner">
-              <Sparkles className="h-5 w-5 text-[var(--c3)]" />
+            <div className="h-9 w-9 rounded-xl bg-white overflow-hidden flex items-center justify-center border border-slate-100 p-0.5">
+              <img src="/logo.png" alt="Logo" className="h-full w-full object-contain scale-[1.3]" />
             </div>
             <div>
               <span className="font-extrabold text-lg tracking-tight text-[var(--c18)] block">Analytics</span>
@@ -1133,6 +1190,17 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     <select
                       className="bg-[var(--c1)] border border-[var(--c5)] rounded-xl px-3 py-2 text-xs font-semibold text-[var(--c18)] focus:outline-none focus:ring-2 focus:ring-[var(--c9)]"
+                      value={compareDeptFilter}
+                      onChange={(e) => setCompareDeptFilter(e.target.value)}
+                    >
+                      <option value="all">All Departments</option>
+                      {Object.keys(departmentCounts).map((dept) => (
+                        <option key={dept} value={dept}>{dept}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="bg-[var(--c1)] border border-[var(--c5)] rounded-xl px-3 py-2 text-xs font-semibold text-[var(--c18)] focus:outline-none focus:ring-2 focus:ring-[var(--c9)]"
                       onChange={(e) => {
                         const id = e.target.value;
                         if (id && !compareIds.includes(id)) {
@@ -1143,9 +1211,15 @@ export default function App() {
                       defaultValue=""
                     >
                       <option value="" disabled>+ Add Employee to Compare</option>
-                      {employees.filter(emp => !compareIds.includes(emp.id)).map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name} ({emp.department})</option>
-                      ))}
+                      {employees
+                        .filter(emp => !compareIds.includes(emp.id))
+                        .filter(emp => compareDeptFilter === "all" || emp.department === compareDeptFilter)
+                        .sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0))
+                        .map(emp => (
+                          <option key={emp.id} value={emp.id}>
+                            {emp.name} ({emp.riskScore ?? 0}% Risk - {emp.role})
+                          </option>
+                        ))}
                     </select>
 
                     <button
@@ -1585,29 +1659,35 @@ export default function App() {
                         <p className="text-[9px] text-[var(--c13)] font-bold mt-0.5">High vs. Low Turnover Groups</p>
                       </div>
 
-                      <div className="space-y-2">
-                        <div className="p-2 bg-red-50/50 border border-red-100 rounded-xl">
-                          <div className="flex justify-between items-center text-[9px] text-red-800 font-bold uppercase tracking-wider mb-1">
-                            <span>Highest Vulnerability</span>
-                            <span className="bg-red-100 px-1 rounded">Action Area</span>
-                          </div>
-                          <div className="flex justify-between items-end">
-                            <span className="text-xs font-black text-red-950">Sales Growth</span>
-                            <span className="text-xs font-mono font-extrabold text-red-800">29.4% Risk</span>
-                          </div>
+                      {employees.length === 0 ? (
+                        <div className="bg-[var(--c2)]/40 p-4 rounded-xl border border-[var(--c4)]/60 text-center text-[10px] text-[var(--c13)] font-semibold leading-normal my-2">
+                          No employee data uploaded yet.
                         </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="p-2 bg-red-50/50 border border-red-100 rounded-xl">
+                            <div className="flex justify-between items-center text-[9px] text-red-800 font-bold uppercase tracking-wider mb-1">
+                              <span>Highest Vulnerability</span>
+                              <span className="bg-red-100 px-1 rounded">Action Area</span>
+                            </div>
+                            <div className="flex justify-between items-end">
+                              <span className="text-xs font-black text-red-950">{departmentRiskMetrics.highest.name}</span>
+                              <span className="text-xs font-mono font-extrabold text-red-800">{departmentRiskMetrics.highest.risk.toFixed(1)}% Risk</span>
+                            </div>
+                          </div>
 
-                        <div className="p-2 bg-emerald-50/50 border border-emerald-100 rounded-xl">
-                          <div className="flex justify-between items-center text-[9px] text-emerald-800 font-bold uppercase tracking-wider mb-1">
-                            <span>Lowest Vulnerability</span>
-                            <span className="bg-emerald-100 px-1 rounded">Stable</span>
-                          </div>
-                          <div className="flex justify-between items-end">
-                            <span className="text-xs font-black text-emerald-950">Engineering R&D</span>
-                            <span className="text-xs font-mono font-extrabold text-emerald-800">12.1% Risk</span>
+                          <div className="p-2 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                            <div className="flex justify-between items-center text-[9px] text-emerald-800 font-bold uppercase tracking-wider mb-1">
+                              <span>Lowest Vulnerability</span>
+                              <span className="bg-emerald-100 px-1 rounded">Stable</span>
+                            </div>
+                            <div className="flex justify-between items-end">
+                              <span className="text-xs font-black text-emerald-950">{departmentRiskMetrics.lowest.name}</span>
+                              <span className="text-xs font-mono font-extrabold text-emerald-800">{departmentRiskMetrics.lowest.risk.toFixed(1)}% Risk</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      )}
 
                       <button
                         onClick={() => setActiveTab("heatmap")}
@@ -1849,20 +1929,26 @@ export default function App() {
                       </div>
 
                       {/* Visual decoration: mini directory lines */}
-                      <div className="bg-[var(--c2)]/40 p-2.5 rounded-xl border border-[var(--c4)]/60 space-y-1 text-[9px] font-mono">
-                        <div className="flex justify-between items-center text-[var(--c13)] border-b border-[var(--c4)]/30 pb-1 mb-1 font-bold">
-                          <span>NAME</span>
-                          <span>FLIGHT RISK</span>
+                      {employees.length === 0 ? (
+                        <div className="bg-[var(--c2)]/40 p-4 rounded-xl border border-[var(--c4)]/60 text-center text-[10px] text-[var(--c13)] font-semibold leading-normal">
+                          No employees loaded.
                         </div>
-                        <div className="flex justify-between text-[var(--c18)]">
-                          <span>Ananya Gupta</span>
-                          <span className="text-red-700 font-bold">84% High</span>
+                      ) : (
+                        <div className="bg-[var(--c2)]/40 p-2.5 rounded-xl border border-[var(--c4)]/60 space-y-1 text-[9px] font-mono">
+                          <div className="flex justify-between items-center text-[var(--c13)] border-b border-[var(--c4)]/30 pb-1 mb-1 font-bold">
+                            <span>NAME</span>
+                            <span>FLIGHT RISK</span>
+                          </div>
+                          {previewEmployees.map((emp) => (
+                            <div key={emp.id} className="flex justify-between text-[var(--c18)]">
+                              <span>{emp.name}</span>
+                              <span className={`${(emp.riskScore ?? 0) >= 60 ? "text-red-700" : (emp.riskScore ?? 0) >= 30 ? "text-amber-700" : "text-emerald-700"} font-bold`}>
+                                {emp.riskScore ?? 0}% {emp.riskLevel || "Low"}
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                        <div className="flex justify-between text-[var(--c18)]">
-                          <span>Rohan Sharma</span>
-                          <span className="text-emerald-700 font-bold">18% Low</span>
-                        </div>
-                      </div>
+                      )}
 
                       <button
                         onClick={() => setActiveTab("directory")}
@@ -2321,7 +2407,7 @@ export default function App() {
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                             {/* Column 1: Employment & Tenure */}
                             <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
-                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                              <h5 className="text-[8.5px] font-black uppercase tracking-tight text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
                                 <Briefcase className="h-3 w-3 text-[var(--c16)]" /> Employment & Tenure
                               </h5>
                               <div className="flex flex-col">
@@ -2348,7 +2434,7 @@ export default function App() {
 
                             {/* Column 2: Compensation Metrics */}
                             <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
-                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                              <h5 className="text-[8.5px] font-black uppercase tracking-tight text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
                                 <IndianRupee className="h-3 w-3 text-[var(--c16)]" /> Compensation Metrics
                               </h5>
                               <div className="flex flex-col">
@@ -2380,7 +2466,7 @@ export default function App() {
 
                             {/* Column 3: Workload & Stress */}
                             <div className="border border-[var(--c2)] p-3.5 rounded-2xl bg-[var(--c1)] space-y-3 shadow-sm">
-                              <h5 className="text-[9px] font-black uppercase tracking-wider text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
+                              <h5 className="text-[8.5px] font-black uppercase tracking-tight text-[var(--c12)] border-b border-[var(--c2)] pb-1.5 flex items-center gap-1">
                                 <Clock className="h-3 w-3 text-[var(--c16)]" /> Workload & Stress
                               </h5>
                               <div className="flex flex-col">
@@ -3026,12 +3112,23 @@ export default function App() {
           </div>
         </main>
 
-        {/* Dynamic empathetic humanized footer warning */}
-        <footer className="max-w-7xl mx-auto px-6 py-10 border-t border-[var(--c7)]/40 text-center text-[var(--c13)] text-[10px] space-y-1">
-          <p className="font-extrabold text-[var(--c16)]">Analytics Workspace • Employee Insights Engine</p>
-          <p className="max-w-2xl mx-auto leading-relaxed">
-            {text.disclaimer}
-          </p>
+        <footer className="max-w-7xl mx-auto px-6 py-10 border-t border-[var(--c7)]/40 text-left text-[var(--c13)] text-[10.5px] space-y-4">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-6">
+            <div className="space-y-1.5 max-w-xl">
+              <p className="font-black text-xs text-[var(--c16)] uppercase tracking-wider">Employee Resignation Risk Predictor (ERRP)</p>
+              <p className="leading-relaxed font-medium">
+                An advanced decision-support dashboard designed to analyze workplace stress, compensation discrepancies, and job satisfaction. ERRP applies predictive modeling to identify turnover risks and generate actionable, AI-driven employee retention plans.
+              </p>
+            </div>
+            <div className="space-y-1.5 text-left md:text-right shrink-0">
+              <p className="font-black text-xs text-[var(--c18)] uppercase tracking-wider">Developer Profile</p>
+              <p className="font-bold text-[var(--c18)]">Dalbir Dhaker</p>
+              <p className="font-medium text-[var(--c13)]">MCA Candidate • Career Point University, Kota</p>
+            </div>
+          </div>
+          <div className="border-t border-[var(--c7)]/25 pt-4 text-center text-[9px] font-medium leading-relaxed max-w-4xl mx-auto">
+            <strong>Confidential Disclaimer:</strong> This system uses predictive analytics and machine learning heuristics to highlight potential resignation risks. Insights are intended as advisory indicators to support human-centric management. Always prioritize direct, empathetic, and open organizational dialogue.
+          </div>
         </footer>
 
         {/* Floating AI Chatbot Assistant */}
@@ -3048,20 +3145,41 @@ export default function App() {
                 <div className="bg-[var(--c16)] text-white px-5 py-4 flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-2">
                     <div className="relative">
-                      <Sparkles className="h-5 w-5 text-[var(--c3)] animate-pulse" />
+                      <div className="h-6 w-6 rounded-md bg-white overflow-hidden flex items-center justify-center border border-slate-100 p-0.5">
+                        <img src="/logo.png" alt="Logo" className="h-full w-full object-contain scale-[1.3]" />
+                      </div>
                       <span className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-emerald-400 border border-white" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-black tracking-wide">Gemini HR Advisor</h4>
+                      <h4 className="text-xs font-black tracking-wide">ERRP AI ASSISTANT</h4>
                       <p className="text-[8px] text-white/80 font-bold uppercase tracking-wider">AI Copilot • Online</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setIsChatOpen(false)}
-                    className="text-white/80 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {chatMessages.length > 1 && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to clear this chat history?")) {
+                            setChatMessages([
+                              { role: "model", text: "Hello! I am your AI HR Assistant. You can ask me anything about employee resignation risks, retention strategies, or insights from the loaded employee directory. How can I help you today?" }
+                            ]);
+                            showToast("Chat history cleared", "success");
+                          }
+                        }}
+                        className="text-white/85 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-all cursor-pointer flex items-center gap-1 text-[10px] font-black uppercase tracking-wider"
+                        title="Clear Chat"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>Clear</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setIsChatOpen(false)}
+                      className="text-white/85 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-all cursor-pointer"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Messages Body */}
@@ -3079,7 +3197,34 @@ export default function App() {
                         }`}
                       >
                         {msg.role === "model" ? (
-                          <MarkdownRenderer text={msg.text} />
+                          <div>
+                            <MarkdownRenderer text={msg.text} />
+                            <div className="mt-2 pt-2 border-t border-[var(--c5)]/30 flex items-center justify-end gap-3 text-[9px] text-[var(--c13)] font-bold">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(msg.text);
+                                  showToast("Message copied!", "success");
+                                }}
+                                className="flex items-center gap-1 hover:text-[var(--c16)] transition-all cursor-pointer bg-transparent border-0 p-0"
+                                title="Copy response"
+                              >
+                                <Copy className="h-3 w-3" />
+                                <span>COPY</span>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const shareUrl = `${window.location.origin}${window.location.pathname}?chatShare=${encodeURIComponent(msg.text)}`;
+                                  navigator.clipboard.writeText(shareUrl);
+                                  showToast("Share link copied to clipboard!", "success");
+                                }}
+                                className="flex items-center gap-1 hover:text-[var(--c16)] transition-all cursor-pointer bg-transparent border-0 p-0"
+                                title="Share response"
+                              >
+                                <Share2 className="h-3 w-3" />
+                                <span>SHARE LINK</span>
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           msg.text
                         )}

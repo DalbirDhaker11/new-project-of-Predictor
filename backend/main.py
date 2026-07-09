@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import time
+import re
 import random
 import uuid
 import json
@@ -168,6 +169,7 @@ async def health():
         "modelMode": "heuristic" if classifier.use_heuristic else "trained",
         "rowCount": len(current_employees),
         "dbConnected": dbmod.is_db_connected(),
+        "metrics": getattr(classifier, "metrics", {}),
     }
 
 
@@ -417,6 +419,7 @@ async def train(request: Request):
             "message": "Model successfully trained on uploaded HR data.",
             "warning": warning,
             "modelMode": "heuristic" if classifier.use_heuristic else "trained",
+            "metrics": getattr(classifier, "metrics", {}),
         }
     except Exception as err:  # noqa: BLE001
         return JSONResponse(status_code=500, content={"error": str(err)})
@@ -599,7 +602,32 @@ Keep the communication realistic, professional, and structured with placeholders
         log_action("AI_DRAFT_GENERATED", f"Generated {draft_type} for {emp.name}.")
         return {"draft": response.text, "isDemo": False}
     except Exception as err:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(err)})
+
+
+def clean_and_parse_json(text: str) -> dict:
+    if not text:
+        return {}
+    text = text.strip()
+    if text.startswith("```"):
+        nl_idx = text.find("\n")
+        if nl_idx != -1:
+            text = text[nl_idx:].strip()
+        if text.endswith("```"):
+            text = text[:-3].strip()
+    
+    # Fix invalid backslash escapes
+    # JSON only allows: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+    pattern = re.compile(r'\\([\"\\/bfnrt]|u[0-9a-fA-F]{4})|(\\)')
+    def replace(match):
+        if match.group(1):
+            return match.group(0)
+        else:
+            return '\\\\'
+    cleaned_text = pattern.sub(replace, text)
+    return json.loads(cleaned_text)
 
 
 @app.post("/api/auto-compare")
@@ -625,40 +653,48 @@ async def auto_compare(request: Request):
             return JSONResponse(status_code=400, content={"error": "No employees to compare."})
 
         context_data = [{
-            "id": e["id"], "name": e["name"], "department": e["department"], "role": e["role"],
-            "riskScore": e["riskScore"], "tenure": e["years_at_company"], "salary": e["monthly_income"],
-            "satisfaction": e["job_satisfaction"], "commute": e["distance_from_home_km"],
-            "performance_factors": e["topRiskFactors"],
+            "id": e["id"],
+            "name": e["name"],
+            "department": e["department"],
+            "role": e["role"],
+            "riskScore": e["riskScore"],
+            "tenure": e["years_at_company"],
+            "salary": e["monthly_income"],
+            "satisfaction": e["job_satisfaction"],
+            "commute": e["distance_from_home_km"],
+            "topFactors": [{"factor": f["factor"], "impact": f["impact"], "value": f["currentValue"]} for f in e["topRiskFactors"]],
         } for e in target]
 
-        system_instruction = "You are an elite HR analytics AI. Your job is to analyze the provided employees for retention comparison and generate a detailed comparative report."
+        system_instruction = "You are an elite, highly concise HR analytics assistant. Your goal is to write extremely short, high-density comparative reports."
 
         if isinstance(employee_ids, list) and len(employee_ids) > 0:
             prompt = f"""Here are the employees selected for comparison:
 {json.dumps(context_data, indent=2)}
 
 Task:
-1. Provide a detailed summary report for HR comparing their risk profiles, value to the company, and explicit recommendations on who to prioritize keeping and what specific actions to take for each.
-2. Your output MUST be valid JSON with two fields:
-   - "selected_employee_ids": an array of the string IDs of the employees you analyzed.
-   - "report_markdown": a detailed markdown-formatted report containing the summary, comparison, and action recommendations.
+1. Provide a concise summary report comparing their risk profiles, value, and action recommendations.
+2. Structure your report with a compact comparison table and short bullet points. Total length must not exceed 250 words.
+3. Your output MUST be valid JSON with two fields:
+   - "selected_employee_ids": an array of the string IDs of the employees analyzed.
+   - "report_markdown": the short, high-density markdown-formatted report.
 
-Return ONLY the JSON object. Do not include any markdown formatting around the JSON block."""
+Return ONLY the JSON object. Do not include markdown wraps around the JSON block."""
         else:
             prompt = f"""Here are the top highest-risk employees currently in the system:
 {json.dumps(context_data, indent=2)}
 
 Task:
-1. Select exactly 2 to 3 employees from this list who provide a meaningful comparison (e.g., similar roles, high risk, or varying factors).
-2. Provide a detailed summary report for HR comparing their risk profiles, value to the company, and recommendations on who to prioritize keeping or what actions to take for each.
-3. Your output MUST be valid JSON with two fields:
-   - "selected_employee_ids": an array of the string IDs of the employees you selected.
-   - "report_markdown": a detailed markdown-formatted report containing the summary, comparison, and action recommendations.
+1. Select exactly 2 to 3 employees from this list who provide a meaningful comparison.
+2. Provide a concise summary report comparing their risk profiles, value, and action recommendations.
+3. Structure your report with a compact comparison table and short bullet points. Total length must not exceed 250 words.
+4. Your output MUST be valid JSON with two fields:
+   - "selected_employee_ids": an array of the string IDs of the employees selected.
+   - "report_markdown": the short, high-density markdown-formatted report.
 
-Return ONLY the JSON object. Do not include any markdown formatting around the JSON block."""
+Return ONLY the JSON object. Do not include markdown wraps around the JSON block."""
 
         response = _generate_content(prompt, system_instruction, temperature=0.2, json_mode=True)
-        result = json.loads(response.text or "{}")
+        result = clean_and_parse_json(response.text or "{}")
         log_action("AI_COMPARE_GENERATED", f"Compared {len(target)} employees.")
         return result
     except Exception as err:  # noqa: BLE001
